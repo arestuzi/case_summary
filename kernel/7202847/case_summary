@@ -1,0 +1,63 @@
+Problem Statement
+how to disable /sys/kernel/mm/redhat_transparent_hugepage/defrag at grub.conf
+
+Description
+how to disable /sys/kernel/mm/redhat_transparent_hugepage/defrag at grub.conf
+
+Solution
+please add transparent_hugepage=never to the end of kernel line in file /boot/grub/grub.conf and reboot the system
+
+Depending on the kernel-parameters.txt and transhuge.txt , only option is transparent_hugepage for the kernel parameter
+== Boot parameter ==
+You can change the sysfs boot time defaults of Transparent Hugepage
+Support by passing the parameter "transparent_hugepage=always" or
+"transparent_hugepage=madvise" or "transparent_hugepage=never"
+(without "") to the kernel command line.
+
+you can only disable it via adding changes to rc.local, no specific kernel paramter about disable the defrag.
+# echo never >/sys/kernel/mm/transparent_hugepage/defrag
+
+
+More deeply
+What is Transparent Huge Pages (THP) ?
+Transparent Huge Pages (THP) are enabled by default in RHEL 6 for all applications. The kernel attempts to allocate hugepages whenever possible and any Linux process will receive 2MB pages if the mmap region is 2MB naturally aligned. The main kernel address space itself is mapped with hugepages, reducing TLB pressure from kernel code.
+
+The kernel will always attempt to satisfy a memory allocation using hugepages. If no hugepages are available (due to non availability of physically continuous memory for example) the kernel will fall back to the regular 4KB pages. THP are also swappable (unlike hugetlbfs). This is achieved by breaking the huge page to smaller 4KB pages, which are then swapped out normally.
+
+But to use hugepages effectively, the kernel must find physically continuous areas of memory big enough to satisfy the request, and also properly aligned. For this, a khugepaged kernel thread has been added. This thread will occasionally attempt to substitute smaller pages being used currently with a hugepage allocation, thus maximizing THP usage.
+
+In userland, no modifications to the applications are necessary (hence transparent). But there are ways to optimize its use. For applications that want to use hugepages, use of posix_memalign() can also help ensure that large allocations are aligned to huge page (2MB) boundaries.
+
+Check system-wide THP usage
+# grep AnonHugePages /proc/meminfo
+AnonHugePages:    632832 kB
+
+Check THP usage per process
+# grep -e AnonHugePages  /proc/*/smaps | awk  '{ if($2>4) print $0} ' |  awk -F "/"  '{print $0; system("ps -fp " $3)} '
+/proc/7519/smaps:AnonHugePages:    305152 kB
+UID        PID  PPID  C STIME TTY          TIME CMD
+qemu      7519     1  1 08:53 ?        00:00:48 /usr/bin/qemu-system-x86_64 -machine accel=kvm -name rhel7 -S -machine pc-i440fx-1.6,accel=kvm,usb=of
+/proc/7610/smaps:AnonHugePages:    491520 kB
+UID        PID  PPID  C STIME TTY          TIME CMD
+qemu      7610     1  2 08:53 ?        00:01:30 /usr/bin/qemu-system-x86_64 -machine accel=kvm -name util6vm -S -machine pc-i440fx-1.6,accel=kvm,usb=
+/proc/7788/smaps:AnonHugePages:    389120 kB
+UID        PID  PPID  C STIME TTY          TIME CMD
+qemu      7788     1  1 08:54 ?        00:00:55 /usr/bin/qemu-system-x86_64 -machine accel=kvm -name rhel64eus -S -machine pc-i440fx-1.6,accel=kvm,us
+
+To disable THP at boot time
+transparent_hugepage=never
+
+To disable THP at run time
+# echo never > /sys/kernel/mm/redhat_transparent_hugepage/enabled
+# echo never > /sys/kernel/mm/redhat_transparent_hugepage/defrag
+
+How to tell if Explicit HugePages is enabled or disabled
+If the value of HugePages_Total is "0" it means HugePages is disabled on the system.
+# grep -i HugePages_Total /proc/meminfo
+HugePages_Total:       0
+
+if the value in /proc/sys/vm/nr_hugepages file or vm.nr_hugepages sysctl parameter is "0" it means HugePages is disabled on the system:
+# cat /proc/sys/vm/nr_hugepages
+0
+# sysctl vm.nr_hugepages
+vm.nr_hugepages = 0

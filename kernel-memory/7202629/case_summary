@@ -1,0 +1,28 @@
+Problem Statement
+swap分区被占用如何释放出来
+
+Description
+1.	当swap被占用后，空间是否会自动释放
+2.	如果无法自动释放，是否其他方式释放
+
+Solution
+简单来讲，使用命令
+# swapoff -a
+# swapon -a
+即可把swap空间中的缓存写入物理内存，但是并不建议采取此办法。当需要swap空间中的缓存时，系统会自动把其加载到物理内存。
+
+More deeply
+How to pull the swapped pages back into physical memory?
+
+Issue:
+    After the server suffered from memory pressure, it may swap out some memory pages to the swap partition. But after the memory pressure is gone, the swapped-out pages would not come back to physical memory immediately. Why?
+    And how can we pull them back into physical memory?
+
+solution:
+
+Why?
+    Short answer is: "By design." In other words it should not. It is not supposed or desired to 'unswap' them immediately (or as soon as possible).
+    Long answer is that after memory is swapped out, it will not return to the physical memory unless it is being used again. The pages can also exist in both the places, swap and main memory, as long as the data are not modified. So having some swap used does not mean the data are not in physical memory as well.
+
+How to read them back in?
+    There is no need to worry. In most cases this is actually not needed and it is recommended to just keep the data in swap. OS will automatically swap the needed pages back into physical memory when needed, and moreover it will also benefit the saved available memory for performance in the meantime.

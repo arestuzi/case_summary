@@ -1,0 +1,71 @@
+Problem Statement
+生产主机日志出现usb报错
+
+Description
+生产主机日志出现如下报错，请帮忙分析下原因，以及是否会有影响
+usb 5-2：device descriptor read/64 error -71
+usb 5-2：device not accepting address 12，error -71
+usb 5-2：device not accepting address 15，error -71
+usb 5-2：device not accepting address 16，error -71
+
+Solution
+1. USB error -110 indicates that the host is not providing enough power to the connected USB device for the USB device to operate.
+2. More specifically, the USB device is not able to send the descriptor to the system to tell RHEL what the device is.
+3. Replace the cable used to connect the USB device to the server.
+4. Login as root and in the terminal type:
+  # echo -1 >/sys/module/usbcore/parameters/autosuspend
+  # echo Y > /sys/module/usbcore/parameters/old_scheme_first
+  # echo Y > /sys/module/usbcore/parameters/use_both_schemes
+
+My reply
+此报错的生成原因主要是由于，usb插口供电不足，造成系统无法识别此usb
+
+您需要检查您的usb设备，同时可以修改以下内核参数来优化您加载设备时的算法，
+
+# echo -1 >/sys/module/usbcore/parameters/autosuspend
+# echo Y > /sys/module/usbcore/parameters/old_scheme_first
+# echo Y > /sys/module/usbcore/parameters/use_both_schemes
+
+autosuspend值设置为-1意为防止新的usb设备自动挂起。
+
+old scheme 指的是 2.6.10 内核之前，插入新的usb设备时，会先读取8字节的设备描述符，再读取剩下的18字节。
+
+还有对应为高速设备设计的新的算法（new scheme），由于高速设备有一个值端点0的最大包大小（maximum packet size for endpoint 0），一般低速设备此值为8字节，而高速设备为64字节。同样存在于初始的8字节的设备描述符中。唯一不同的是，低速设备默认读取8字节就可以获得此值，进行正常传输。而高速设备需要一次读取整个端点0的包（64字节），来获取设备描述符。
+
+插入一个新设备的时候，内核不知道它是高速设备还是低速设备，所以需要加这两条参数告诉内核，先使用旧的方法，如果失败了，再使用新的方法加载设备。
+
+Root Cause
+1. Host USB ports supply power to USB devices, if the USB port on the host is not sending enough power (e.g. USB 1.1 on the host and USB 2.0 required on the device) then the device cannot function
+
+2. The -71 error can mean one of protocol failure, power issue or IO error, but typically these issues are power related issues.
+
+More deeply
+The "old scheme" is the way Linux worked before 2.6.10. When a new device
+is plugged in, the system first assigns it an address, then reads the
+initial 8 bytes of the device descriptor, then reads the entire 18-byte
+device descriptor.
+
+The "new scheme" is basically the way Windows works. (Not surprisingly,
+some devices won't work any other way.) When a new device is plugged in,
+the system first issues a 64-byte read request for the device descriptor,
+then resets the device, then assigns it an address, and then reads the
+actual 18-byte device descriptor.
+
+The reason for these shenanigans is that with a full-speed device, the
+maximum packet size for endpoint 0 (ep0maxpacket) isn't known beforehand.
+It could be 8, 16, 32, or 64 bytes. (Low-speed devices must use 8, and
+high-speed devices must use 64.) The ep0maxpacket value is stored in the
+initial 8 bytes of the device descriptor, but to read the device
+descriptor you have to use endpoint 0!
+
+The two schemes above are the two common solutions to this chicken-and-egg
+problem. The old scheme is the one recommended by the USB Implementors
+Forum (which makes it the "Standard"); the new scheme is the one used by
+Microsoft (which makes it another kind of "Standard"!). A well-designed
+standards-compliant device will work okay with either scheme.
+Unfortunately it seems that no matter which scheme you pick, some
+badly-designed non-compliant devices won't work. There's an additional
+usbcore.ko module parameter people can use in especially bad cases:
+use_both_schemes=y
+This will cause the system to try one of the schemes, and if it fails then
+try the other scheme. (Maybe that should always be the default...)

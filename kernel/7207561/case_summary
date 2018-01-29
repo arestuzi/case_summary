@@ -1,0 +1,6 @@
+Problem Statement
+查看CPU插槽总数而不是当前使用数量，请问如何查询？
+
+solution
+请执行此命令查看CPU插槽个数：
+# dmidecode -t4 | grep Socket.Designation: | wc -l

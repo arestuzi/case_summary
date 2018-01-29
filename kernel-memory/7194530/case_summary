@@ -1,0 +1,130 @@
+Problem Statement
+服务器 Cached内存过高，达到270G，总内存：400G
+
+Description
+如何控制Linux Cached Memory增长。
+
+Solutions
+free中的cashe和buffer区别：
+简单来讲：
+cache 把当前系统中执行过命令或者其他从硬盘中读取的数据在内存中保留起来，如果未来还需要用到这些信息，则可以直接从内存中读出来，而不需要去硬盘中读取，从而提高系统的I/O效率。
+buffer 是针对磁盘块的缓存，主要包含页缓存的元数据（page cache),例如， 当需要读取cache中的某些数据时，kernel会先检查buffer中包含的元数据是指向cache中哪些文件，再去cache中对应的地方读取文件内容。
+
+More deeply
+What is difference between cache and buffer ?
+Cache Pages:
+
+    A cache is the part of the memory which transparently stores data so that future requests for that data can be served faster. This memory is utilized by the kernel to cache disk data and improve i/o performance.
+
+    The Linux kernel is built in such a way that it will use as much RAM as it can to cache information from your local and remote filesystems and disks. As the time passes over various reads and writes are performed on the system, kernel tries to keep data stored in the memory for the various processes which are running on the system or the data that of relevant processes which would be used in the near future. The cache is not reclaimed at the time when process get stop/exit, however when the other processes requires more memory then the free available memory, kernel will run heuristics to reclaim the memory by storing the cache data and allocating that memory to new process.
+
+    When any kind of file/data is requested then the kernel will look for a copy of the part of the file the user is acting on, and, if no such copy exists, it will allocate one new page of cache memory and fill it with the appropriate contents read out from the disk.
+
+    The data that is stored within a cache might be values that have been computed earlier or duplicates of original values that are stored elsewhere in the disk. When some data is requested, the cache is first checked to see whether it contains that data. The data can be retrieved more quickly from the cache than from its source origin.
+
+    SysV shared memory segments are also accounted as a cache, though they do not represent any data on the disks. One can check the size of the shared memory segments using ipcs -m command and checking the bytes column.
+
+Buffers :
+
+    Buffers are the disk block representation of the data that is stored under the page caches. Buffers contains the metadata of the files/data which resides under the page cache.
+
+Example: When there is a request of any data which is present in the page cache, first the kernel checks the data in the buffers which contain the metadata which points to the actual files/data contained in the page caches. Once from the metadata the actual block address of the file is known, it is picked up by the kernel for processing.
+
+Actually, the "cached" value is secondary and is derived from "buffers" and "swapcached" values, as for the kernel-2.6.32-431.3.1.el6:
+Raw
+
+[fs/proc/meminfo.c]
+static int meminfo_proc_show(struct seq_file *m, void *v)
+{
+    ...skip...
+    #define K(x) ((x) << (PAGE_SHIFT - 10))
+    si_meminfo(&i);
+
+    ...skip...
+    cached = global_page_state(NR_FILE_PAGES) - total_swapcache_pages - i.bufferram;
+    if (cached < 0) cached = 0;
+
+    ...skip...
+    seq_printf(m,
+        "MemTotal:       %8lu kB\n"
+        "MemFree:        %8lu kB\n"
+        "Buffers:        %8lu kB\n"
+        "Cached:         %8lu kB\n"
+        "SwapCached:     %8lu kB\n"
+
+    ...skip...
+        K(i.totalram),
+        K(i.freeram),
+        K(i.bufferram),
+        K(cached),
+        K(total_swapcache_pages),
+
+[mm/page_alloc.c]
+void si_meminfo(struct sysinfo *val)
+{
+    val->totalram = totalram_pages;
+    val->sharedram = 0;
+    val->freeram = global_page_state(NR_FREE_PAGES);
+    val->bufferram = nr_blockdev_pages();
+    ...skip...
+
+[fs/block_dev.c]
+long nr_blockdev_pages(void)
+{
+    struct block_device *bdev;
+    long ret = 0;
+    spin_lock(&bdev_lock);
+    list_for_each_entry(bdev, &all_bdevs, bd_list) {
+        ret += bdev->bd_inode->i_mapping->nrpages;
+    }
+    spin_unlock(&bdev_lock);
+    return ret;
+}
+
+[include/linux/swap.h]
+#define total_swapcache_pages swapper_space.nrpages
+
+[include/linux/vmstat.h]
+static inline unsigned long global_page_state(enum zone_stat_item item)
+{
+    long x = atomic_long_read(&vm_stat[item]);
+#ifdef CONFIG_SMP
+    if (x < 0) x = 0;
+#endif
+    return x;
+}
+
+What is cache in "free -m" output and why is memory utilization high for cache?
+What is cache in free -m?
+It shows the amount of RAM which is currently used by the page cache. The page cache is a copy in memory of data which was read from or written to disk. In simple terms we can say the page cache is a copy of disk data available in memory.
+
+What is the advantage of having the cache mechanism?
+Kernel read and write operations operate on main memory. Whenever any read or write operation is performed, the kernel first needs to copy the required data into memory:
+
+Read operation:
+- go to disk and search for data
+- write the data from disk into memory
+- perform read operation
+
+Write Operation:
+- go to disk and search for data
+- write the data from disk into memory
+- perform write operation
+- copy the modified data back to disk
+
+Summary:
+- Accessing disks is very slow compared to accessing memory
+- By using cache, fetching and writing data to disk for every read and wrote operation can be avoided
+- Periodically, modified ("dirty") data in the page cache is written to disk
+- This tremendously increases processing speed and system performance
+
+What happens if there is no free RAM left and a new process needs free RAM?
+When a new process requires free pages on RAM, at that time the kernel will check if there are any pages in the cache and accordingly the kernel will reclaim free pages by pushing back (syncing) the files from cache to the local disk and free up memory for new processes.
+
+Why is so much of memory used by cache?
+
+    Per the Linux virtual memory manager, this behavior is normal. To understand why cache memory can become so high, and why this is not an issue, one must understand how I/O works on Linux. When a user process reads or writes a file, it is actually modifying a copy of that file in main memory. The kernel creates that copy from the disk and writes back changes to it when necessary. The memory taken up by these copies is called cached memory.
+
+    Cached memory will be consumed whenever a user process initiates a read or write. The kernel will look for a copy of the part of the file the user is acting on, and, if no such copy exists, it will allocate one new page of cache memory and fill it with the appropriate contents read out from the disk. If the user only reads the file, this page will be marked as a "clean" cache page. However, as soon as the user writes the file, the page will be marked "dirty." A kernel thread which appears in ps called pdflush will wake up periodically and copy all of the pages marked dirty back to the disk, then mark them as clean again. Note that the page is only re-marked as clean, the page is not freed when it is written back, but is kept around in case something wants to do further IO on the part of the file it caches.
+
+    Cache pages are only freed again when the kernel needs memory for something else. Since having the cache page already read from disk can speed up I/O, and since getting rid of a clean cache page is just as easy as allocating a free page, and since a free page is doing nothing to help the system perform and function, there is no reason to turn a cache page into a free page. If memory fills up with cache pages, the next time the kernel needs memory it will simply evict the least recently used clean cache pages and re-purpose them.

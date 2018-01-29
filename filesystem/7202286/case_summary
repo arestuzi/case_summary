@@ -1,0 +1,95 @@
+Problem Statement
+Inotify 内核参数调整问题
+
+Description
+/proc/sys/fs/inotify/max_user_watches和/proc/sys/fs/inotify/max_user_instances 这两个参数，其中max_user_watches是指的用户所有instances的watches的总和吗，当前用户的watches数怎么查看？
+
+
+Solution
+根据inotify的man手册：
+~~~
+/proc/sys/fs/inotify/max_queued_events
+              The  value  in  this file is used when an application calls inotify_init(2) to set an upper
+              limit on the number of events that can be queued to  the  corresponding  inotify  instance.
+              Events in excess of this limit are dropped, but an IN_Q_OVERFLOW event is always generated.
+
+/proc/sys/fs/inotify/max_user_instances
+              This  specifies  an  upper limit on the number of inotify instances that can be created per
+              real user ID. <--- 每个用户可以创建的inotify实例的上限
+
+/proc/sys/fs/inotify/max_user_watches
+              This specifies an upper limit on the number of watches that can be created  per  real  user
+              ID. <--- 每个用户可以创建watches的上限
+~~~
+根据man手册，instances 和watches并无对应关系， 只与用户的UID有关。
+
+您可以通过执行此命令，查看已经使用掉的watches数
+for foo in /proc/*/fd/*; do readlink -f $foo; done |grep inotify |cut -d/ -f3 |xargs -I '{}' -- ps --no-headers -o '%p %U %c' -p '{}' |uniq -c |sort -nr
+
+The first column indicates used amount and the second shows the PID of that process
+
+例如：
+6     1 root     systemd
+使用数量 PID 用户 进程名
+
+reply from cu (1)
+2     1 root     init
+      1   923 root     udevd
+      1   922 root     udevd
+      1   412 root     udevd
+      1  1715 root     crond
+
+以上是我的结果。
+
+我将max_user_watches调到50发现tail -f /var/log/messages出现“No space left
+on device”
+
+调到51，tail -f /var/log/messages没有问题。
+
+我的理解是/var/log/messaegs耗费一个watch而已。
+
+reply
+根据inotify的man手册，如果需要监控文件系统的event，最少需要两个步骤：
+步骤1：系统调用inotify_init或者inotify_init1来创建inotify的instance并返回一个fd：
+~~~
+returns a file descriptor referring to the inotify instance
+~~~
+
+这里的instance可以在/proc/[PID]/fd目录下查看到，比如：
+~~~
+# ll /proc/1/fd
+
+lr-x------. 1 root root 64 May  9 11:49 5 -> inotify
+lr-x------. 1 root root 64 May  9 11:49 6 -> inotify
+~~~
+
+也可以通过lsof查看到：
+~~~
+# lsof | grep inotify | grep init
+init          1      root    5r      DIR               0,10        0          1 inotify
+init          1      root    6r      DIR               0,10        0          1 inotify
+~~~
+
+这里查看到instance由max_user_instances限制：
+~~~
+This specifies an upper limit on the number of inotify instances that can be created per real user ID.
+~~~
+
+步骤2：系统调用inotify_add_watch来创建或者修改现有的watch，每一个watch由一个特有的watch descriptor标识，一个watch是（object,mask）对儿，一般情况下object指文件或者目录，mask指inotify event:
+~~~
+A watch is an (object,mask) pair where the object is a file or directory and the mask is a bit mask of one or more inotify events.
+~~~
+
+这里的watch descriptor由max_user_watches限制：
+~~~
+This specifies an upper limit on the number of watches that can be created per real user ID.
+~~~
+
+所以这里限制的是每个UID的最大watch数量。
+
+最后关于您的理解：
+~~~
+我的理解是/var/log/messaegs耗费一个watch而已。
+~~~
+
+一般来说是正确的，因为每个watch会对应一个object(文件或者目录)，一个WD。另外，目前为止还没有找到办法查看已有进程所消耗的watch的准确数量。

@@ -1,0 +1,63 @@
+Problem Statement
+OS panic
+
+
+此次宕机与上次宕机原因相同。均为
+PANIC: "Kernel panic - not syncing: hung_task: blocked tasks"
+出现hung task超时时，由于kernel.hung_task_panic = 1，系统会收集vmcore并重启
+
+分析您此次宕机原因：
+crash> kmem -i
+                 PAGES        TOTAL      PERCENTAGE
+    TOTAL MEM  66089138     252.1 GB         ----
+         FREE    99613     389.1 MB    0% of TOTAL MEM
+         USED  65989525     251.7 GB   99% of TOTAL MEM
+       SHARED    21934      85.7 MB    0% of TOTAL MEM
+      BUFFERS      324       1.3 MB    0% of TOTAL MEM
+       CACHED    15314      59.8 MB    0% of TOTAL MEM
+         SLAB    31502     123.1 MB    0% of TOTAL MEM
+
+   TOTAL SWAP  8388607        32 GB         ----
+    SWAP USED  8388607        32 GB  100% of TOTAL SWAP
+    SWAP FREE        0            0    0% of TOTAL SWAP
+
+ COMMIT LIMIT  41433176     158.1 GB         ----
+    COMMITTED  87985489     335.6 GB  212% of TOTAL LIMIT
+可用内存和swap均被占满。
+
+crash> ps | grep UN | wc -l
+62
+D状态进程总共有62个
+
+crash> ps | grep extract | wc -l
+2837
+extract相关进程个数
+
+crash> ps -G | tail -n +2 | cut -b2- | gawk '{mem += $8} END {print "total " mem/1048576 "GB"}'
+total 249.605GB
+总共使用内存大小
+
+crash> ps -G | sed 's/>//g' | sort -k 8,8 -n | awk '$8 ~ /[0-9]/{ $8 = $8/1024" MB"; print }' | tail -20
+17661 9399 43 ffff881059fb4ab0 UN 0.7 9924796 1863.48 MB extract
+15586 9399 14 ffff881059bab520 UN 0.7 9792132 1971.8 MB extract
+12066 9399 9 ffff8820120a2040 RU 0.8 9793252 2165.96 MB extract
+38943 9399 45 ffff881d95d5a040 RU 0.8 9792068 2190.51 MB extract
+12233 9399 9 ffff882032fb6040 IN 0.9 9790824 2333.16 MB extract
+15292 9399 9 ffff881f345d0040 IN 1.0 11275760 2545.96 MB extract
+9901 9399 10 ffff882068998040 UN 1.3 9794848 3342.07 MB extract
+117610 9399 42 ffff882068482ab0 RU 1.3 9825572 3482.25 MB extract
+93168 9399 13 ffff881d951eeab0 UN 1.3 10003236 3549.13 MB extract
+36367 9399 20 ffff881dfcdc6040 UN 1.4 9792160 3632.46 MB extract
+17553 9399 13 ffff881f3463a040 UN 1.5 9925436 3833.29 MB extract
+9805 9399 25 ffff88205c013520 RU 1.5 9860024 3845.49 MB extract
+36271 9399 44 ffff881dfcdf5520 RU 1.5 9791988 3846.99 MB extract
+36477 9399 9 ffff881e7904a040 IN 1.5 9792344 3932.15 MB extract
+39127 9399 22 ffff881da03e4ab0 RU 1.5 9933156 3946.61 MB extract
+14800 9399 12 ffff881066938ab0 UN 1.5 9857172 3988.32 MB extract
+12336 9399 62 ffff882032fb6ab0 IN 1.6 10527652 4173.88 MB extract
+12443 9399 15 ffff882012281520 RU 4.0 18984532 10484.3 MB extract
+9442 9399 59 ffff882068054ab0 RU 29.6 106212060 78099.3 MB extract
+17779 9399 15 ffff881059fde040 UN 34.5 105452732 91225.5 MB extract
+占用内存最高的前20个进程。
+
+应用占用内存过高，进程等待系统回收内存，导致出现hung task超时现象。建议查看应用oggnas/goldengate/szxhdr05/hca_jue01/extract为何占用如此高的内存

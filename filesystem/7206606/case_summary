@@ -1,0 +1,16 @@
+Problem Statement
+nfs_inode_cache 的值非常大
+
+Description
+解释一下slabtop如何分析这些统计，nfs_inode_cache缓存的是什么如果高会不会对我们的业务有影响。cat /proc/slabinfo 有好多关于nfscache内容一并解释。
+
+solution
+经查看，此现象属于正常现象，并不会对您的系统业务造成影响。
+Slab:           22215336 kB
+SReclaimable:   20065100 kB
+
+此值是系统中slabtop读出的总大小。其中20065100kB是可回收的。　系统会在必要时自动回收此缓存，不需人为干涉。
+执行echo 2 > /proc/sys/vm/drop_caches 会手动回收ｓｌａｂ cache， 建议进行维护的时候测试此操作，释放缓存会造成I/O压力增加。
+
+More deeply
+The kernel will take advantage of all available free memory and only when memory is critically low will it reclaim it back. So while there is free memory the nfs_inode_cache slab cache is free to continue to grow in size. The problem is then how much of the slab cache can be reclaimed when memory is low? Well it's very unlikely that all of the memory used by the nfs_inode_cache slab cache is active and so it would be fair to assume that most of the memory will be available to be reclaimed when needed.

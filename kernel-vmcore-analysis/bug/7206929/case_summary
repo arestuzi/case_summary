@@ -1,0 +1,215 @@
+Problem Statement
+system crash with <1>BUG: unable to handle kernel paging request at ffffffff895227f5 IP:perf_event_task_tick
+
+Analysis
+System Information:
+
+crash> sys | grep -e NODE -e RELEASE -e PANIC
+    NODENAME: pb02db01
+     RELEASE: 2.6.32-573.el6.x86_64
+       PANIC: "BUG: unable to handle kernel paging request at ffffffff895227f5"
+
+crash> sys -i | grep DMI_BIOS_VENDOR:
+        DMI_BIOS_VENDOR: Intel Corporation
+
+CPU family and model:
+
+crash> px boot_cpu_data.x86_model_id
+$1 = "Intel(R) Xeon(R) CPU E5-2699 v4 @ 2.20GHz\000\000\000\000\000\000\000..."
+
+Kernel Ring Buffer:
+
+crash> log
+[..]
+BUG: unable to handle kernel paging request at ffffffff895227f5
+IP: [<ffffffff811226d0>] perf_event_task_tick+0x0/0x2e0
+PGD 1a8f067 PUD 1a93063 PMD 0
+Oops: 0010 [#1] SMP
+last sysfs file: /sys/devices/pci0000:80/0000:80:03.0/0000:83:00.0/host28/target28:0:0/28:0:0:30/state
+CPU 70
+[..]
+
+The panic task is 'swapper' with PID (0):
+
+crash> set -p
+    PID: 0
+COMMAND: "swapper"
+   TASK: ffff887fcd7f7520  (1 of 88)  [THREAD_INFO: ffff887fcd000000]
+    CPU: 70
+  STATE: TASK_RUNNING (PANIC)
+
+Backtrace of panic task:
+
+crash> bt
+PID: 0      TASK: ffff887fcd7f7520  CPU: 70  COMMAND: "swapper"
+ #0 [ffff8802718c39f0] machine_kexec at ffffffff8103d1ab
+ #1 [ffff8802718c3a50] crash_kexec at ffffffff810cc4f2
+ #2 [ffff8802718c3b20] oops_end at ffffffff8153c840
+ #3 [ffff8802718c3b50] no_context at ffffffff8104e8cb
+ #4 [ffff8802718c3ba0] __bad_area_nosemaphore at ffffffff8104eb55
+ #5 [ffff8802718c3bf0] bad_area_nosemaphore at ffffffff8104ec23
+ #6 [ffff8802718c3c00] __do_page_fault at ffffffff8104f3c0
+ #7 [ffff8802718c3d20] do_page_fault at ffffffff8153e78e
+ #8 [ffff8802718c3d50] page_fault at ffffffff8153bb35
+    [exception RIP: perf_event_task_tick]
+    RIP: ffffffff811226d0  RSP: ffff8802718c3e00  RFLAGS: 00010002
+    RAX: ffffffff8160e4c0  RBX: ffff8802718d59c0  RCX: 0000000000000004
+    RDX: 0000000000000000  RSI: ffff887fcd7f7520  RDI: ffff8802718d59c0
+    RBP: ffff8802718c3e38   R8: ffffffff8160e8a5   R9: 0000000000000002
+    R10: 0000000000000010  R11: 0000000000000002  R12: 0000000000000046
+    R13: 00000000000159c0  R14: 0000000000000046  R15: ffff887fcd7f7520
+    ORIG_RAX: ffffffffffffffff  CS: 0010  SS: 0018
+ #9 [ffff8802718c3e00] scheduler_tick at ffffffff810631dc
+#10 [ffff8802718c3e40] update_process_times at ffffffff81089d2e
+#11 [ffff8802718c3e70] tick_sched_timer at ffffffff810b3336
+#12 [ffff8802718c3ea0] __run_hrtimer at ffffffff810a5d3e
+#13 [ffff8802718c3ef0] hrtimer_interrupt at ffffffff810a60d6
+#14 [ffff8802718c3f70] local_apic_timer_interrupt at ffffffff81035dad
+#15 [ffff8802718c3f90] smp_apic_timer_interrupt at ffffffff815423d5
+#16 [ffff8802718c3fb0] apic_timer_interrupt at ffffffff8100bc13
+--- <IRQ stack> ---
+#17 [ffff887fcd003d98] apic_timer_interrupt at ffffffff8100bc13
+    [exception RIP: intel_idle+254]
+    RIP: ffffffff812f0c4e  RSP: ffff887fcd003e48  RFLAGS: 00000202
+    RAX: 0000000000000000  RBX: ffff887fcd003ed8  RCX: 0000000000000000
+    RDX: 000000000000032c  RSI: 0000000000000000  RDI: 00000000000c63f1
+    RBP: ffffffff8100bc0e   R8: 0000000000000004   R9: 00000000000005b7
+    R10: 0000000000000002  R11: 0000000000000000  R12: ffffffff8100969d
+    R13: ffff887fcd003e18  R14: ffffffff810ad50d  R15: ffff887fcd003dd8
+    ORIG_RAX: ffffffffffffff10  CS: 0010  SS: 0018
+#18 [ffff887fcd003ee0] cpuidle_idle_call at ffffffff8143331a
+#19 [ffff887fcd003f00] cpu_idle at ffffffff81009fe6
+
+Dis-assembly of exception RIP: 0xffffffff811226d0
+
+crash>  dis -rl 0xffffffff811226d0
+/usr/src/debug/kernel-2.6.32-573.el6/linux-2.6.32-573.el6.x86_64/kernel/events/core.c: 2601
+0xffffffff811226d0 <perf_event_task_tick>:      push   %rbp
+
+The corresponding kernel source code.
+
+Kernel Source: kernel/sched.c
+....
+5963 void scheduler_tick(void)
+5964 {
+5965         int cpu = smp_processor_id();
+5966         struct rq *rq = cpu_rq(cpu);
+5967         struct task_struct *curr = rq->curr;
+5968
+5969         sched_clock_tick();
+5970
+5971         spin_lock(&rq->lock);
+5972         update_rq_clock(rq);
+5973         update_cpu_load_active(rq);
+5974         curr->sched_class->task_tick(rq, curr, 0);
+5975         spin_unlock(&rq->lock);
+5976
+5977         perf_event_task_tick();
+....
+
+Kernel Source: kernel/events/core.c
+....
+2600 void perf_event_task_tick(void)
+2601 {
+2602         struct list_head *head = &__get_cpu_var(rotation_list);
+....
+
+The RIP (perf_event_task_tick/ffffffff811226d0) reported by 'bt' command is not correct.
+It's not matching with the actual panic. I am suspecting that  the provided kernel crash
+dump (vmcore) is inconsistent.
+
+Based on the backtraces of panic task it appears that the kernel panic occurred due to a
+known rotation list corruption kernel bug: 1283155[1]
+
+[** Resolution: **]
+
+The fix of kernel bug: 1283155[1] was released via errata: RHSA-2016-0855
+
+Errata Link  : https://rhn.redhat.com/errata/RHSA-2016-0855.html
+Package Name : kernel-2.6.32-642.el6.x86_64.rpm
+
+$ rpm -qp kernel-2.6.32-642.el6.x86_64.rpm --changelog | grep 1283155
+- [perf] x86/intel/uncore: Add Broadwell-EP uncore support (Jiri Olsa) [1242694 1249700 1283155]
+- [perf] x86/intel/uncore: Add Broadwell-DE uncore support (Jiri Olsa) [1242694 1249700 1283155]
+- [perf] Decouple unthrottling and rotating (Jiri Olsa) [1242694 1249700 1283155]
+- [x86] perf: Add more Broadwell model numbers (Jiri Olsa) [1242694 1249700 1283155]
+- [perf] perf/x86/intel: Remove incorrect model number from Haswell perf (Jiri Olsa) [1242694 1249700 1283155]
+
+[** Recommendation: **]
+
+Upgrade the kernel package to version '2.6.32-642.el6' or higher.
+
+[** Bugzilla id: 1283155 and the bug fix patch details: **]
+
+commit 184d431d93c5d9af8f68767bf90227c5695dd925
+Author: Jiri Olsa <jolsa@redhat.com>
+Date:   Sun Dec 13 10:42:26 2015 -0500
+
+    [perf] Decouple unthrottling and rotating
+
+    Message-id: <1450003348-7027-4-git-send-email-jolsa@redhat.com>
+    Patchwork-id: 128900
+    O-Subject: [PATCH RHEL6 BZ1283155 3/5] perf: Decouple unthrottling and rotating
+    Bugzilla: 1242694 1249700 1283155
+    RH-Acked-by: Don Zickus <dzickus@redhat.com>
+    RH-Acked-by: Prarit Bhargava <prarit@redhat.com>
+    RH-Acked-by: Tony Camuso <tcamuso@redhat.com>
+
+    Bugzilla: 1283155
+    https://bugzilla.redhat.com/show_bug.cgi?id=1283155
+
+    upstream
+    ========
+    commit 2fde4f94e0a9531251e706fa57131b51b0df042e
+    Author: Mark Rutland <mark.rutland@arm.com>
+    Date:   Wed Jan 7 15:01:54 2015 +0000
+
+    KABI
+    ====
+    The perf_cpu_context::rotation_list is deprecated in
+    favor of perf_event_context::active_ctx_list.
+
+    The perf related structures are incorporated into some key
+    core structures (like 'struct perf_event *' pointer is used
+    within 'struct thread_struct', 'struct perf_event_context*'
+    pointer is in 'struct task_struct'). This breaks KABI any
+    time we change perf related struct, while at the moment we
+    don't have any perf related function on KABI list.
+
+    description
+    ===========
+    Currently the adjusments made as part of perf_event_task_tick() use the
+    percpu rotation lists to iterate over any active PMU contexts, but these
+    are not used by the context rotation code, having been replaced by
+    separate (per-context) hrtimer callbacks. However, some manipulation of
+    the rotation lists (i.e. removal of contexts) has remained in
+    perf_rotate_context(). This leads to the following issues:
+
+    * Contexts are not always removed from the rotation lists. Removal of
+      PMUs which have been placed in rotation lists, but have not been
+      removed by a hrtimer callback can result in corruption of the rotation
+      lists (when memory backing the context is freed).
+
+      This has been observed to result in hangs when PMU drivers built as
+      modules are inserted and removed around the creation of events for
+      said PMUs.
+
+    * Contexts which do not require rotation may be removed from the
+      rotation lists as a result of a hrtimer, and will not be considered by
+      the unthrottling code in perf_event_task_tick.
+
+    This patch fixes the issue by updating the rotation ist when events are
+    scheduled in/out, ensuring that each rotation list stays in sync with
+    the HW state. As each event holds a refcount on the module of its PMU,
+    this ensures that when a PMU module is unloaded none of its CPU contexts
+    can be in a rotation list. By maintaining a list of perf_event_contexts
+    rather than perf_event_cpu_contexts, we don't need separate paths to
+    handle the cpu and task contexts, which also makes the code a little
+    simpler.
+
+    As the rotation_list variables are not used for rotation, these are
+    renamed to active_ctx_list, which better matches their current function.
+    perf_pmu_rotate_{start,stop} are renamed to
+    perf_pmu_ctx_{activate,deactivate}.
+
+    Signed-off-by: Aristeu Rozanski <aris@redhat.com>

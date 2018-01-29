@@ -1,0 +1,159 @@
+Problem Statement
+服务器多次无故死机
+
+vmcore分析过程如下：
+- Log:
+~~~
+BUG: unable to handle kernel NULL pointer dereference at (null)
+IP: [<ffffffff813860e3>] scsi_send_eh_cmnd+0x63/0x530
+
+Pid: 4181, comm: scsi_eh_7 Tainted: P           ---------------    2.6.32-431.29.2.el6.x86_64 #1 Huawei Technologies Co., Ltd. RH8100 V3/BC61PBIA
+RIP: 0010:[<ffffffff813860e3>]  [<ffffffff813860e3>] scsi_send_eh_cmnd+0x63/0x530
+RSP: 0018:ffff88206643fca0  EFLAGS: 00010286
+RAX: 0000000000000000 RBX: ffff885a802b10c0 RCX: 0000000000002710
+RDX: ffff88121608e000 RSI: ffffffff82017288 RDI: ffff885a802b10c0
+RBP: ffff88206643fda0 R08: 0000000000000000 R09: ffffffff81645da0
+R10: 0000000000000001 R11: 0000000000000000 R12: 0000000000000001
+R13: ffff88206643fe90 R14: 0000000000000000 R15: 0000000000000000
+FS:  0000000000000000(0000) GS:ffff8820b89a0000(0000) knlGS:0000000000000000
+CS:  0010 DS: 0018 ES: 0018 CR0: 000000008005003b
+CR2: 0000000000000000 CR3: 0000002ab69e7000 CR4: 00000000001407e0
+DR0: 0000000000000000 DR1: 0000000000000000 DR2: 0000000000000000
+DR3: 0000000000000000 DR6: 00000000ffff0ff0 DR7: 0000000000000400
+Process scsi_eh_7 (pid: 4181, threadinfo ffff88206643e000, task ffff88206643d500)
+Stack:
+ 0000000000000007 ffff8850691df090 ffff882000000030 0000000000000000
+<d> ffff88206643fd60 ffff885b1d27ae40 0000000632616c71 ffffffff82017288
+<d> 382d5d302e30303a 00203a373a633130 ffff885a802b10c0 ffff882069446040
+Call Trace:
+ [<ffffffff81121e97>] ? mempool_free_slab+0x17/0x20
+ [<ffffffff81121fe5>] ? mempool_free+0x95/0xa0
+ [<ffffffffa007f81c>] ? qla2x00_sp_free_dma+0x13c/0x280 [qla2xxx]
+ [<ffffffff81386672>] scsi_eh_tur+0x42/0xc0
+ [<ffffffff8138675a>] scsi_eh_test_devices+0x6a/0x260
+ [<ffffffff81387d4c>] scsi_error_handler+0x5dc/0x810
+ [<ffffffff81387770>] ? scsi_error_handler+0x0/0x810
+ [<ffffffff8109abf6>] kthread+0x96/0xa0
+ [<ffffffff8100c20a>] child_rip+0xa/0x20
+ [<ffffffff8109ab60>] ? kthread+0x0/0xa0
+ [<ffffffff8100c200>] ? child_rip+0x0/0x20
+Code: 48 8b 87 80 00 00 00 48 8b 17 45 89 c6 48 8b 80 b0 00 00 00 48 c7 85 18 ff ff ff 00 00 00 00 48 85 c0 74 11 48 8b 80 c8 02 00 00 <48> 8b 00 48 89 85 18 ff ff ff 48 8d 85 40 ff ff ff 48 63 c9 bf
+RIP  [<ffffffff813860e3>] scsi_send_eh_cmnd+0x63/0x530
+ RSP <ffff88206643fca0>
+CR2: 0000000000000000
+~~~
+
+- Back trace:
+~~~
+crash> bt
+PID: 4181   TASK: ffff88206643d500  CPU: 121  COMMAND: "scsi_eh_7"
+ #0 [ffff88206643f890] machine_kexec at ffffffff81038f3b
+ #1 [ffff88206643f8f0] crash_kexec at ffffffff810c5af2
+ #2 [ffff88206643f9c0] oops_end at ffffffff8152ca50
+ #3 [ffff88206643f9f0] no_context at ffffffff8104a00b
+ #4 [ffff88206643fa40] __bad_area_nosemaphore at ffffffff8104a295
+ #5 [ffff88206643fa90] bad_area_nosemaphore at ffffffff8104a363
+ #6 [ffff88206643faa0] __do_page_fault at ffffffff8104aabf
+ #7 [ffff88206643fbc0] do_page_fault at ffffffff8152e99e
+ #8 [ffff88206643fbf0] page_fault at ffffffff8152bd55
+    [exception RIP: scsi_send_eh_cmnd+99]
+                      ^---------------------point in kernel code where the issue happened (RIP)
+
+    RIP: ffffffff813860e3  RSP: ffff88206643fca0  RFLAGS: 00010286
+    RAX: 0000000000000000  RBX: ffff885a802b10c0  RCX: 0000000000002710
+    RDX: ffff88121608e000  RSI: ffffffff82017288  RDI: ffff885a802b10c0
+    RBP: ffff88206643fda0   R8: 0000000000000000   R9: ffffffff81645da0
+    R10: 0000000000000001  R11: 0000000000000000  R12: 0000000000000001
+    R13: ffff88206643fe90  R14: 0000000000000000  R15: 0000000000000000
+    ORIG_RAX: ffffffffffffffff  CS: 0010  SS: 0018
+ #9 [ffff88206643fda8] scsi_eh_tur at ffffffff81386672
+#10 [ffff88206643fdd8] scsi_eh_test_devices at ffffffff8138675a
+#11 [ffff88206643fe28] scsi_error_handler at ffffffff81387d4c
+#12 [ffff88206643fee8] kthread at ffffffff8109abf6
+#13 [ffff88206643ff48] kernel_thread at ffffffff8100c20a
+~~~
+
+- Disassemble
+~~~
+crash> dis -r scsi_send_eh_cmnd+99
+0xffffffff81386080 <scsi_send_eh_cmnd>: push   %rbp
+0xffffffff81386081 <scsi_send_eh_cmnd+1>:       mov    %rsp,%rbp
+0xffffffff81386084 <scsi_send_eh_cmnd+4>:       push   %r15
+0xffffffff81386086 <scsi_send_eh_cmnd+6>:       push   %r14
+0xffffffff81386088 <scsi_send_eh_cmnd+8>:       push   %r13
+0xffffffff8138608a <scsi_send_eh_cmnd+10>:      push   %r12
+0xffffffff8138608c <scsi_send_eh_cmnd+12>:      push   %rbx
+0xffffffff8138608d <scsi_send_eh_cmnd+13>:      sub    $0xd8,%rsp
+0xffffffff81386094 <scsi_send_eh_cmnd+20>:      nopl   0x0(%rax,%rax,1)
+0xffffffff81386099 <scsi_send_eh_cmnd+25>:      mov    %gs:0x28,%rax
+0xffffffff813860a2 <scsi_send_eh_cmnd+34>:      mov    %rax,-0x38(%rbp)
+0xffffffff813860a6 <scsi_send_eh_cmnd+38>:      xor    %eax,%eax
+0xffffffff813860a8 <scsi_send_eh_cmnd+40>:      mov    %rsi,-0xc8(%rbp)
+0xffffffff813860af <scsi_send_eh_cmnd+47>:      mov    %edx,-0xcc(%rbp)
+0xffffffff813860b5 <scsi_send_eh_cmnd+53>:      mov    %rdi,%rbx
+                                                save first parameter (%rdi) to register %rbx
+
+0xffffffff813860b8 <scsi_send_eh_cmnd+56>:      mov    0x80(%rdi),%rax
+                                                scsi_cmnd->request (see below) saved to %rax
+
+0xffffffff813860bf <scsi_send_eh_cmnd+63>:      mov    (%rdi),%rdx
+                                                scsi_cmnd->device (see below) saved to %rdx
+
+0xffffffff813860c2 <scsi_send_eh_cmnd+66>:      mov    %r8d,%r14d
+0xffffffff813860c5 <scsi_send_eh_cmnd+69>:      mov    0xb0(%rax),%rax
+                                                request->rq_disk (see below) saved to %rax
+
+0xffffffff813860cc <scsi_send_eh_cmnd+76>:      movq   $0x0,-0xe8(%rbp)
+0xffffffff813860d7 <scsi_send_eh_cmnd+87>:      test   %rax,%rax
+                                                test for NUL
+
+0xffffffff813860da <scsi_send_eh_cmnd+90>:      je     0xffffffff813860ed <scsi_send_eh_cmnd+109>
+0xffffffff813860dc <scsi_send_eh_cmnd+92>:      mov    0x2c8(%rax),%rax
+                                                rq_disk->private_data (see below) saved to %rax
+
+0xffffffff813860e3 <scsi_send_eh_cmnd+99>:      mov    (%rax),%rax
+                                                %rax was NULL and we've tried to dereference it at this point
+~~~
+
+- Source code:
+~~~
+int scsi_send_eh_cmnd(struct scsi_cmnd *, unsigned char *, int, int, unsigned int);
+
+static inline struct scsi_driver *scsi_cmd_to_driver(struct scsi_cmnd *cmd)
+{
+        if (!cmd->request->rq_disk)
+                return NULL;
+
+        return *(struct scsi_driver **)cmd->request->rq_disk->private_data;
+}
+~~~
+
+- Fc Host was in recovery state:
+~~~
+crash> scsi_cmnd ffff885a802b10c0
+struct scsi_cmnd {
+  device = 0xffff88121608e000,
+
+crash> scsi_device 0xffff88121608e000
+struct scsi_device {
+  host = 0xffff88206953a000,
+
+crash> Scsi_Host 0xffff88206953a000 | grep -e name -e state
+  work_q_name = "scsi_wq_7\000\000\000\000\000\000\000\000\000\000",
+  shost_state = SHOST_RECOVERY,
+      name = 0xffff8820683ac740 "host7",
+~~~
+
+- Returning null:
+~~~
+crash> scsi_cmnd ffff885a802b10c0 | grep request
+  request = 0xffff88606731b620,
+
+request ffff88606731b620 |grep rq_disk
+  rq_disk = 0xffff8819ce2d5400,
+
+gendisk ffff8819ce2d5400 | grep private
+  private_data = 0x0,
+
+ROOT CAUSE
+scsi_cmd_to_driver() dereferences the private_data pointer of the gendisk attached to the request for the command. This is not safe for devices without a high-level SCSI driver attached. It expects a pointer to be set up which is configured by the high-level drivers, sd, sr, etc. A SCSI device with only an sg device connected to it will not have the private_data pointer set up, and the system crashes when scsi_cmd_to_driver() dereferences the NULL pointer.

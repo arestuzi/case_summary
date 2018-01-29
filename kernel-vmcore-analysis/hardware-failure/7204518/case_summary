@@ -1,0 +1,66 @@
+Problem Statement
+6.5虚机内核崩溃
+
+Analysis
+１． /var/log/mcelog下有很多关于ｃｐｕ的硬件故障报错
+
+
+KERNEL: /cores/retrace/repos/kernel/x86_64/usr/lib/debug/lib/modules/2.6.32-431.el6.x86_64/vmlinux
+    DUMPFILE: /cores/retrace/tasks/340373262/crash/vmcore  [PARTIAL DUMP]
+        CPUS: 48
+        DATE: Fri Jul  1 15:33:42 2016
+      UPTIME: 104 days, 01:38:20
+LOAD AVERAGE: 0.84, 0.84, 0.88
+       TASKS: 1958
+     RELEASE: 2.6.32-431.el6.x86_64
+     VERSION: #1 SMP Sun Nov 10 22:19:54 EST 2013
+     MACHINE: x86_64  (1895 Mhz)
+      MEMORY: 383.6 GB
+       PANIC: "Kernel panic - not syncing: Fatal Machine check"　<--- 硬件故障报错
+
+[Hardware Error]: CPU 36: Machine Check Exception: 5 Bank 18: be200000000c110a
+[Hardware Error]: RIP !INEXACT! 10:<ffffffff812e0991> {intel_idle+0xb1/0x170}
+[Hardware Error]: TSC 3c99f07d8700af ADDR 305adce780 MISC 48fc13560409c086
+[Hardware Error]: PROCESSOR 0:306e7 TIME 1467401622 SOCKET 2 APIC 41
+[Hardware Error]: CPU 38: Machine Check Exception: 5 Bank 18: be200000000c110a
+[Hardware Error]: RIP !INEXACT! 10:<ffffffff812e0991> {intel_idle+0xb1/0x170}
+[Hardware Error]: TSC 3c99f07d86feab ADDR 305adce780 MISC 48fc13560409c086
+[Hardware Error]: PROCESSOR 0:306e7 TIME 1467401622 SOCKET 2 APIC 45
+[Hardware Error]: Run the above through 'mcelog --ascii'
+[Hardware Error]: CPU 12: Machine Check Exception: 5 Bank 18: be200000000c110a
+[Hardware Error]: RIP !INEXACT! 10:<ffffffff812e0991> {intel_idle+0xb1/0x170}
+[Hardware Error]: TSC 3c99f07d870093 ADDR 305adce780 MISC 48fc13560409c086
+[Hardware Error]: PROCESSOR 0:306e7 TIME 1467401622 SOCKET 2 APIC 40
+[Hardware Error]: Run the above through 'mcelog --ascii'
+[Hardware Error]: Machine check: Processor context corrupt
+
+Kernel panic - not syncing: Fatal Machine check
+Pid: 0, comm: swapper Tainted: P   M       ---------------    2.6.32-431.el6.x86_64 #1
+Call Trace:
+ <#MC>  [<ffffffff815271fa>] ? panic+0xa7/0x16f
+ [<ffffffff8102880f>] ? mce_panic+0x20f/0x230
+ [<ffffffff81029efc>] ? do_machine_check+0xa1c/0xaf0
+ [<ffffffff812e0991>] ? intel_idle+0xb1/0x170
+ [<ffffffff8152a83c>] ? machine_check+0x1c/0x30
+ [<ffffffff812e0991>] ? intel_idle+0xb1/0x170
+ <<EOE>>  [<ffffffff810a0428>] ? hrtimer_start+0x18/0x20
+ [<ffffffff81427818>] ? menu_select+0x178/0x390
+ [<ffffffff814266f7>] ? cpuidle_idle_call+0xa7/0x140
+ [<ffffffff81009fc6>] ? cpu_idle+0xb6/0x110
+ [<ffffffff81520e13>] ? start_secondary+0x2ac/0x2ef
+
+
+crash> px mcelog | head -n 10 | grep status
+      status = 0xbe200000000c110a,
+crash> eval -b 0xbe200000000c110a
+hexadecimal: be200000000c110a
+    decimal: 13699950066461839626  (-4746794007247711990)
+      octal: 1370400000000003010412
+     binary: 1011111000100000000000000000000000000000000011000001000100001010
+   bits set: 63 61 60 59 58 57 53 19 18 12 8 3 1
+
+bits set对应代表的含义：
+63: VAL (Valid error report)
+61: UC  (Error not corrected)
+60: EN  (Error reporting enabled)
+57: PCC (Processor state corrupted by error)

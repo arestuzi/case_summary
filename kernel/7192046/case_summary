@@ -1,0 +1,39 @@
+Problem Statement
+Redhat 5.x和6.x 的max number of processes 默认是多少,如何修改。
+
+Description
+Redhat 5.x和6.x 的max number of processes 默认是多少,如何修改。
+
+Solution
+The pid number is allocated from the kernel. By default the pid_max value in RHEL5 is 32768. On RHEL6, the default pid_max value will depend on the number of CPUs available, it'll be the result of the following calculation:
+
+pid_max = min(pid_max_max, max_t(int, pid_max, PIDS_PER_CPU_DEFAULT * num_possible_cpus()))
+
+Which with RHEL6 kernel config translates to:
+
+On 32 bit kernel: pid_max = min(32768, max(32768, 1024 * (number of CPUs))) = 32768
+On 64 bit kernel: pid_max = min(4194304, max(32768, 1024 * (number of CPUs)))
+
+On 32 bit kernels, the maximum value allowed for pid_max is 32768. On 64 bit kernels, it is 4194304 (=4 * 1024 * 1024).
+
+But it is recommended that any value which exceeds a 128K footprint should be avoided. A pid_max of 1 million causes a 128K footprint. So theoretically half million is an acceptable value.
+
+For user space application, the minimal pid start from 300.
+
+It is always advisable to check it thoroughly in a test environment as per the requirement.
+
+It depends on server resources and also the application which requires the pid_max to be increased. An example for simple testing is given below.
+
+1. Modify the pid_max value to 50000.
+
+[root@test root]# cat /proc/sys/kernel/pid_max
+32768
+
+[root@test root]# echo 50000 > /proc/sys/kernel/pid_max
+
+or
+
+[root@test root]# sysctl -w kernel.pid_max=50000
+
+[root@test root]# cat /proc/sys/kernel/pid_max
+50000

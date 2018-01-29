@@ -1,0 +1,59 @@
+Problem Statement
+系统无法正常使用
+
+您好！
+感谢您使用红帽全球技术支持服务！
+～～～
+通过查看您上传的vmcore文件，符合此kbase描述的现象，需要通过升级内核至kernel-2.6.32-431.el6或更高解决此问题
+
+～～～
+Servers with Intel® Xeon® Processor E5, Intel® Xeon® Processor E5 v2, or Intel® Xeon® Processor E7 v2 and certain versions of Red Hat Enterprise Linux 6 kernels become unresponsive/hung or incur a kernel panic
+On Intel® Xeon® Processor E5 Family 6 Model 45 (also known as SandyBridge), the Time Stamp Counter (TSC) is not cleared by a warm reboot. This is documented in the Intel® Xeon® Processor E5 Family Specification Update as erratum BT81.
+
+On Intel® Xeon® Processor E5 v2 Family 6 Model 62 (also known as IvyBridge), the Time Stamp Counter (TSC) is not cleared by a warm reboot. This is documented in the Intel® Xeon® Processor E5 v2 Family Specification Update as erratum CA105.
+
+On Intel® Xeon® Processor E7 v2 Family 6 Model 62 (also known as IvyBridge-EX), the Time Stamp Counter (TSC) is not cleared by a warm reboot. This is documented in the Intel® Xeon® E7-2800/4800/8800 v2 Product Family Specification Update as erratum CF101.
+
+These processor errata can adversely affect servers running all versions of Red Hat Enterprise Linux 6 kernels which contain the following change:
+[sched] x86: Avoid unnecessary overflow in sched_clock (...) [765720]
+
+This change requires that the TSC is cleared at the time when the system boots. Otherwise the values in the kernel's cyc2ns_offset table that are relevant to scheduling are not initialized correctly on systems that have not been power cycled (hard reset) for a long time, which is typically longer than ~200 days. The incorrect values in this table can cause various symptoms mentioned under Issue and under Diagnostic Steps.
+～～～
+vmcore分析：
+crash> sys
+      KERNEL: /cores/retrace/repos/kernel/x86_64/usr/lib/debug/lib/modules/2.6.32-358.el6.x86_64/vmlinux
+    DUMPFILE: /cores/retrace/tasks/240414773/crash/vmcore  [PARTIAL DUMP]
+        CPUS: 64
+        DATE: Wed Jul 13 22:03:43 2016
+      UPTIME: 00:12:01
+LOAD AVERAGE: 7.56, 3.55, 1.41
+       TASKS: 2110
+    NODENAME: TJTJ-PS-IPS-WEB04
+     RELEASE: 2.6.32-358.el6.x86_64
+     VERSION: #1 SMP Tue Jan 29 11:47:41 EST 2013
+     MACHINE: x86_64  (2300 Mhz)
+      MEMORY: 32 GB
+       PANIC: "Kernel panic - not syncing: hung_task: blocked tasks"
+crash> runq
+...
+
+CPU 58 RUNQUEUE: ffff880687556700
+  CURRENT: PID: 0      TASK: ffff88087c59f500  COMMAND: "swapper"
+  RT PRIO_ARRAY: ffff880687556888
+     [  0] PID: 238    TASK: ffff88027c1a5500  COMMAND: "watchdog/58"
+  CFS RB_ROOT: ffff880687556798
+     [no tasks queued]
+crash> pd ((struct rq *)0xffff880687556700)->rt.rt_throttled <--- hung task现象发生在CPU 58上
+$3 = 1
+crash> px cyc2ns_offset | tail -n +4 | awk '{ print $2 }' > cyc2ns.txt
+crash> rd -x < cyc2ns.txt | head
+ffff88002f60cb40:  fff040f7f5f2a46e  <---- cyc2ns_offset 表中，对应CPU0值未初始化
+ffff88002f62cb40:  003040f7f5f2a46e
+ffff88002f64cb40:  003040f7f5f2a46e
+ffff88002f66cb40:  003040f7f5f2a46e
+ffff88002f68cb40:  003040f7f5f2a46e
+ffff88002f6acb40:  003040f7f5f2a46e
+ffff88002f6ccb40:  003040f7f5f2a46e
+ffff88002f6ecb40:  003040f7f5f2a46e
+ffff88028740cb40:  003040f7f5f2a46e
+ffff88028742cb40:  003040f7f5f2a46e

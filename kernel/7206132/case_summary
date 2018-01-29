@@ -1,0 +1,63 @@
+Problem Statement
+edac: edac-ctl: Error: No dimm labels for Inspur Shangrila
+
+Description
+系统日志message中大量反复出现如下错误，附件是收集到的sosreport：
+Jul 12 17:33:53 localhost edac: edac-ctl: Error: No dimm labels for Inspur Shangrila
+Jul 12 17:38:54 localhost kernel: ERST: Error Record Serialization Table (ERST) support is initialized.
+Jul 12 17:39:03 localhost edac: edac-ctl: Error: No dimm labels for Inspur Shangrila
+
+solution
+
+此日志产生原因由于
+edac-ctl并没有在文件/etc/edac/labels.db中找到厂商 Inspur Shangrila，所以产生的此报错，可以忽略。
+
+相关代码：
+** ~/rpmbuild/BUILD/edac-utils-0.9/src/util/edac-ctl
+
+sub print_dimm_labels
+{
+    my $fh = shift || *STDOUT;
+    my $lref = parse_dimm_labels ();
+    my $vendor = lc $conf{mainboard}{vendor}; <--- 文件中没有对此变量加以说明
+    my $model  = lc $conf{mainboard}{model};
+    my $format = "%-35s %-20s %-20s\n";
+
+    if (!exists $$lref{$vendor}{$model}) {
+        log_error ("No dimm labels for $conf{mainboard}{vendor} " .
+                   "$conf{mainboard}{model}\n");
+        return;
+    }
+
+    1、labels.db中没有找到厂商Inspur Shangrila的原因是什么呢？
+    这里面的信息需要手动添加。
+    注释里面的意思是说，可以在dmidecode中找到相应的Vendor-name and model-name
+    label标签，在服务器主板上面的标签中可以找到。
+
+    例如：
+     173 vendor : LENOVO
+     174   Model : 20EGS0R60A
+     175     DIMM_A1: 0.0.0; DIMM_B1: 0.1.0;
+     176     DIMM_C1: 0.2.0; DIMM_D1: 0.3.0;
+     177     DIMM_E1: 1.0.0; DIMM_F1: 1.1.0;
+     178     DIMM_G1: 1.2.0; DIMM_H1: 1.3.0;
+
+    输出：
+    terry@terry-MagicBook:~/source_code/edac/edac-utils-0.9/src/util$ edac-ctl --print-labels
+    LOCATION                            CONFIGURED LABEL     SYSFS CONTENTS
+    mc0/csrow0/ch0_dimm_label           DIMM_A1              Missing
+    mc0/csrow1/ch0_dimm_label           DIMM_B1              Missing
+    mc0/csrow2/ch0_dimm_label           DIMM_C1              Missing
+    mc0/csrow3/ch0_dimm_label           DIMM_D1              Missing
+    mc1/csrow0/ch0_dimm_label           DIMM_E1              Missing
+    mc1/csrow1/ch0_dimm_label           DIMM_F1              Missing
+    mc1/csrow2/ch0_dimm_label           DIMM_G1              Missing
+    mc1/csrow3/ch0_dimm_label           DIMM_H1              Missing
+
+
+    2、为什么会间隔约5分钟反复出现报错，ERST反复initialized？
+    Jul 12 18:10:15 localhost kernel: ERST: Error Record Serialization Table (ERST) support is initialized.
+    并非内核报错，Error Record Serialization Table 是 “ERST”的全称。
+
+    edac驱动每隔一段时间就会通过device_initcall(erst_init)初始化一次，此日志只是提示初始化完成。
+    pr_info(ERST_PFX "Error Record Serialization Table (ERST) support is initialized.\n");

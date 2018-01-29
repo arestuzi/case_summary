@@ -1,0 +1,105 @@
+Problem Statement
+异常重启
+
+Analysis
+crash> bt
+PID: 21215  TASK: ffff8807962ea080  CPU: 0   COMMAND: "java"
+ #0 [ffff880028203ab0] machine_kexec at ffffffff81038f3b
+ #1 [ffff880028203b10] crash_kexec at ffffffff810c5d92
+ #2 [ffff880028203be0] oops_end at ffffffff8152b510
+ #3 [ffff880028203c10] die at ffffffff81010e0b
+ #4 [ffff880028203c40] do_trap at ffffffff8152ad74
+ #5 [ffff880028203ca0] do_invalid_op at ffffffff8100cf95
+ #6 [ffff880028203d40] invalid_op at ffffffff8100bf9b
+    [exception RIP: ata_sff_hsm_move+317]
+    RIP: ffffffff813a77ad  RSP: ffff880028203df8  RFLAGS: 00010097
+    RAX: 0000000000000000  RBX: ffff88082e6e1c60  RCX: 0000000000000000
+    RDX: ffff88082e6e1d10  RSI: ffff88082e6e1c60  RDI: ffff88082e6e0000
+    RBP: ffff880028203e58   R8: ffff88082ee92000   R9: 00007f52f05f4928
+    R10: 00007f52f407a090  R11: 0000000000000246  R12: ffff88082e6e0000
+    R13: 0000000000000000  R14: 0000000000000018  R15: ffff88082e6e1d78
+    ORIG_RAX: ffffffffffffffff  CS: 0010  SS: 0000
+ #7 [ffff880028203e60] ata_sff_host_intr at ffffffff813a7fbd
+ #8 [ffff880028203e90] ata_sff_interrupt at ffffffff813a821e
+ #9 [ffff880028203ed0] handle_IRQ_event at ffffffff810e6ec0
+#10 [ffff880028203f20] handle_edge_irq at ffffffff810e981e
+#11 [ffff880028203f60] handle_irq at ffffffff8100faf9
+#12 [ffff880028203f80] do_IRQ at ffffffff81530fdc
+--- <IRQ stack> ---
+#13 [ffff88082ee93f58] ret_from_intr at ffffffff8100b9d3
+    RIP: 00007f52f9905ee2  RSP: 00007f52f05f4928  RFLAGS: 00000206
+    RAX: 0000000000000001  RBX: 00007f52f05f4970  RCX: 00000000000004f8
+    RDX: 0000000000001000  RSI: 000000000000000d  RDI: 00007f52f4078f00
+    RBP: ffffffff8100b9ce   R8: 000000000000000d   R9: 00000000f8000000
+    R10: 00007f52f407a090  R11: 0000000000000246  R12: 0000000000000000
+    R13: 00007f52e0fdd750  R14: 000000000000000c  R15: 0000000000001000
+    ORIG_RAX: ffffffffffffffc0  CS: 0033  SS: 002b
+crash> dis -r ffffffff813a77ad | tail
+0xffffffff813a778b <ata_sff_hsm_move+283>:	and    $0x8,%dl
+0xffffffff813a778e <ata_sff_hsm_move+286>:	mov    $0x1,%eax
+0xffffffff813a7793 <ata_sff_hsm_move+291>:	je     0xffffffff813a7830 <ata_sff_hsm_move+448>
+0xffffffff813a7799 <ata_sff_hsm_move+297>:	mov    $0x1,%eax
+0xffffffff813a779e <ata_sff_hsm_move+302>:	jmpq   0xffffffff813a76c1 <ata_sff_hsm_move+81>
+0xffffffff813a77a3 <ata_sff_hsm_move+307>:	cmp    $0x3,%eax
+0xffffffff813a77a6 <ata_sff_hsm_move+310>:	je     0xffffffff813a77cb <ata_sff_hsm_move+347>
+0xffffffff813a77a8 <ata_sff_hsm_move+312>:	cmp    $0x4,%eax
+0xffffffff813a77ab <ata_sff_hsm_move+315>:	je     0xffffffff813a77ed <ata_sff_hsm_move+381>
+0xffffffff813a77ad <ata_sff_hsm_move+317>:	ud2
+
+crash> bt -c 5
+PID: 350    TASK: ffff88082e6e4aa0  CPU: 5   COMMAND: "scsi_eh_1"
+ #0 [ffff8800282a7e90] crash_nmi_callback at ffffffff8102fee6
+ #1 [ffff8800282a7ea0] notifier_call_chain at ffffffff8152d515
+ #2 [ffff8800282a7ee0] atomic_notifier_call_chain at ffffffff8152d57a
+ #3 [ffff8800282a7ef0] notify_die at ffffffff810a154e
+ #4 [ffff8800282a7f20] do_nmi at ffffffff8152b1db
+ #5 [ffff8800282a7f50] nmi at ffffffff8152aaa0
+    [exception RIP: _spin_lock_irqsave+47]
+    RIP: ffffffff8152a1ff  RSP: ffff88082e6ebaa0  RFLAGS: 00000006
+    RAX: 0000000000000001  RBX: ffff88082e6e1eb8  RCX: 0000000000000000
+    RDX: 0000000000000246  RSI: 0000000000000010  RDI: ffff88082f287658
+    RBP: ffff88082e6ebaa0   R8: ffff8808340e1a00   R9: 0000000000000000
+    R10: 0000000000000000  R11: 0000000000000000  R12: ffff88082e6e0000
+    R13: 000000000000001f  R14: ffff88082e6e1d50  R15: ffff88082e6e1c60
+    ORIG_RAX: ffffffffffffffff  CS: 0010  SS: 0018
+--- <NMI exception stack> ---
+ #6 [ffff88082e6ebaa0] _spin_lock_irqsave at ffffffff8152a1ff
+ #7 [ffff88082e6ebaa8] ata_exec_internal_sg at ffffffff81396fb5
+ #8 [ffff88082e6ebb58] ata_exec_internal at ffffffff81397109
+ #9 [ffff88082e6ebbd8] atapi_eh_request_sense at ffffffff813a34eb
+#10 [ffff88082e6ebc38] ata_eh_link_autopsy at ffffffff813a4aa4
+#11 [ffff88082e6ebcd8] ata_eh_autopsy at ffffffff813a4c50
+#12 [ffff88082e6ebcf8] ata_do_eh at ffffffff813a4d32
+#13 [ffff88082e6ebd38] ata_sff_error_handler at ffffffff813a5e86
+#14 [ffff88082e6ebd88] ata_scsi_port_error_handler at ffffffff813a2b2e
+#15 [ffff88082e6ebde8] ata_scsi_error at ffffffff813a2f98
+#16 [ffff88082e6ebe28] scsi_error_handler at ffffffff81386cfa
+#17 [ffff88082e6ebee8] kthread at ffffffff8109aef6
+#18 [ffff88082e6ebf48] kernel_thread at ffffffff8100c20a
+
+libata: prevent HSM state change race between ISR and PIO
+
+This problem is hard to reproduce making this patch hard to verify, but this
+fix will prevent the race.
+
+It is possible for ata_sff_flush_pio_task() to set ap->hsm_task_state to
+HSM_ST_IDLE in between the time __ata_sff_port_intr() checks for HSM_ST_IDLE
+and before it calls ata_sff_hsm_move() causing ata_sff_hsm_move() to BUG().
+
+1222         switch (ap->hsm_task_state) {
+....
+1445         case HSM_ST_ERR:
+1446                 ap->hsm_task_state = HSM_ST_IDLE;
+1447
+1448                 /* complete taskfile transaction */
+1449                 ata_hsm_qc_complete(qc, in_wq);
+1450
+1451                 poll_next = 0;
+1452                 break;
+1453         default:
+1454                 poll_next = 0;
+1455                 BUG();  <----
+1456         }
+
+
+Somewhere between the ata_sff_hsm_move() check and the ata_sff_host_intr() check, the value changed. Before it tried to acquire a spinlock, ata_exec_internal_sg() called ata_sff_flush_pio_task(). This function will set ap->hsm_task_state to HSM_ST_IDLE, and has no locking around setting this value. The ata_sff_flush_pio_task() function can then race with the interrupt handler and potentially set HSM_ST_IDLE at a fatal moment, which will trigger the kernel BUG().

@@ -1,0 +1,77 @@
+Problem Statement
+关于top命令看到的CPU使用率问题
+
+Description
+1. 使用top命令看总体CPU使用率33.8%，而下面详细进程那里个别进程的cpu使用率超过了100，请问这是为什么。
+
+2. 您所说的“对于多核CPU的环境，比如4核八线程的CPU，通过超线程技术，系统中可以看到的CPU核心是8个”里面的4核指的是逻辑CPU个数吗？而CPU的线程数量是CPU个数乘以2么？还有，Irix模式是什么意思？
+
+Solution
+
+1. 通过top的man手册可以对%CPU有一段解释：
+%CPU  --  CPU Usage
+           The task's share of the elapsed CPU time since the last screen update, expressed as a percentage of total CPU time.
+
+           In a true SMP environment, if a process is multi-threaded and top is not operating in Threads mode, amounts  greater  than  100%  may  be
+           reported.  You toggle Threads mode with the `H' interactive command.
+
+           Also  for multi-processor environments, if Irix mode is Off, top will operate in Solaris mode where a task's cpu usage will be divided by
+           the total number of CPUs.  You toggle Irix/Solaris modes with the `I' interactive command.
+
+对于多核CPU的环境，比如4核八线程的CPU，通过超线程技术，系统中可以看到的CPU核心是8个，总的CPU时间为800%，Irix模式开启，%CPU显示的是总CPU时间的一部分。 如果Irix模式设置为off，执行top命令时，%CPU显示的值会自动除以核心数
+例如： 已经使用了120% / 800% Irix on
+      已经使用了15% / 100% Irix off
+# top命令执行后， 输入 shift+i 可以设置Irix 为off
+
+关于/proc/cpuinfo说明：
+processor　：系统中逻辑处理核的编号。对于单核处理器，则课认为是其CPU编号，对于多核处理器则可以是物理核、或者使用超线程技术虚拟的逻辑核
+vendor_id　：CPU制造商
+cpu family　：CPU产品系列代号
+model　　　：CPU属于其系列中的哪一代的代号
+model name：CPU属于的名字及其编号、标称主频
+stepping　  ：CPU属于制作更新版本
+cpu MHz　  ：CPU的实际使用主频
+cache size   ：CPU二级缓存大小
+physical id   ：单个CPU的标号
+siblings       ：单个CPU逻辑物理核数
+core id        ：当前物理核在其所处CPU中的编号，这个编号不一定连续
+cpu cores    ：该逻辑核所处CPU的物理核数
+apicid          ：用来区分不同逻辑核的编号，系统中每个逻辑核的此编号必然不同，此编号不一定连续
+fpu             ：是否具有浮点运算单元（Floating Point Unit）
+fpu_exception  ：是否支持浮点计算异常
+cpuid level   ：执行cpuid指令前，eax寄存器中的值，根据不同的值cpuid指令会返回不同的内容
+wp             ：表明当前CPU是否在内核态支持对用户空间的写保护（Write Protection）
+flags          ：当前CPU支持的功能 <-- 如果有ht则代表cpu支持超线程技术
+ht： HyperThreading. Introduces an imaginary second processor that doesn’t do much but lets you run threads in the same process a  bit quicker.
+bogomips   ：在系统内核启动时粗略测算的CPU速度（Million Instructions Per Second）
+clflush size  ：每次刷新缓存的大小单位
+cache_alignment ：缓存地址对齐单位
+address sizes     ：可访问地址空间位数
+power management ：对能源管理的支持
+
+查询系统具有多少个逻辑核：cat /proc/cpuinfo | grep "processor" | wc -l
+
+查询系统CPU的物理核数：cat /proc/cpuinfo | grep "cpu cores" | uniq
+
+查询系统CPU是否启用超线程：cat /proc/cpuinfo | grep -e "cpu cores"  -e "siblings" | sort | uniq
+如果cpu cores数量和siblings数量一致，则没有启用超线程，否则超线程被启用。
+
+查询系统CPU的个数：cat /proc/cpuinfo | grep "physical id" | sort | uniq | wc -l
+
+Load Average是CPU的Load，它所包含的信息不是CPU的使用率状况，而是在一段时间内CPU正在处理以及等待CPU处理的进程数之和的统计信息，也就是CPU使用队列的长度的统计信息。
+
+More deeply
+What is load average?
+formula
+load(t) = n+((load(t-1)-n)/e^(interval/(min*60)))
+  load(t): load average at a time of t.
+  n: number of threads in running or uninterruptible state.
+  interval: calculate interval (seconds). 5 seconds in RHEL.
+  min: average time (minute).
+
+How to interpret the value?
+Although there are many factor to consider when analyzing the load on the system, a good starting point is comparing the load value with the number of CPU cores available.
+If load represents the workload, the number of CPU core represents the workforce. Having a load value lower than the number of CPU cores is the desired status.
+
+For example a load of 8 on a 2 core CPU can be considered high while the same load on a 32 core system can be considered normal.
+Sometimes it's helpful to consider load as percentage of the available resources (the load value divided by the number or cores). Example: load of 0.5 on a dual core system can be 25% load, a load of 2 on a single core system can be 200% load, a load of 160 on a 16 core system can be 1000% load (anything above 100% is considered 'high load').
