@@ -1,0 +1,102 @@
+Problem Statement
+linux内存问题
+Description
+目前管理系统和数据库机器经常报警虚拟内存超过80%，经过公司的人调研发现，是由于两个系统每天在数据库机器加载的文件过大（1机每日加载文件在40-50G，2机每月一次的10G），但是内存不释放，一直积累，且不确定什么时候会释放一次。从而导致系统报警。看能否约红帽相关人员谈一下这个问题，看是否有解决办法。
+
+"您在哪里遇到了这个问题？在什么环境下遇到这个问题？"
+
+1. 内存多久释放一次？
+2. 目前物理机一般内存都是512G，但是监控软件一般阀值都是70%或者80%，造成还剩100多G的内存没有使用的情况下，监控已经报警，经free命令观察，主要是cache占用的内存，在不能改变监控规则的情况下，从操作系统层面来说，有哪些好的办法来控制内存的使用？有什么风险？
+
+Solution
+关于swap建议分配大小可参考：
+https://access.redhat.com/solutions/15244
+
+如何添加swap分区：
+What is the recommended swap size for Red Hat platforms?
+
+Red Hat Enterprise Linux 5
+Amount of installed RAM 	Recomended swap space
+4GB or less 	2GB swap space
+4GB - 16GB 	4GB swap space
+16GB - 64GB 	8GB swap space
+64GB - 256GB 	16GB swap space
+
+Red Hat Enterprise Linux 6, Red Hat Enterprise Linux 7, Red Hat Enterprise Open Stack Platform 3 and Red Hat Enterprise Open Stack Platform 4
+Amount of installed RAM 	Recommended swap space 	Recommended swap space if allowing for hibernation
+2GB or less 	Twice the installed RAM 	3 times the amount of RAM
+> 2GB - 8GB 	The same amount of RAM 	2 times the amount of RAM
+> 8GB - 64GB 	At least 4GB 	1.5 times the amount of RAM
+> 64GB or more 	At least 4GB 	Hibernation not recommended
+
+Note: A swap space of at least 100GB is recommended for systems with over 140 logical processors or over 3TB of RAM.
+
+The actual Part of anaconda code is here
+anaconda-13.21.215-1.el6/iutil.py
+
+    456 def swapSuggestion(quiet=0, hibernation=False, disk_space=None):
+    457     """
+    458     Suggest the size of the swap partition that will be created.
+    459
+    460     @param quiet: Should size information be logged?
+    461     @param hibernation: Suggest size of the swap partition to support hibernation?
+    462     @param disk_space: Total disk space available
+    463     @return: A tuple of the minimum and maximum swap size, in megabytes.
+    464
+    465     """
+    466
+    467     mem = memInstalled()/1024
+    468     mem = ((mem/16)+1)*16
+    469     if not quiet:
+    470     log.info("Detected %sM of memory", mem)
+    471
+    472     #chart suggested in the discussion with other teams
+    473     #see:
+    474     if mem < 2048:
+    475         swap = 2 * mem
+    476
+    477     elif 2048 <= mem < 8192:
+    478         swap = mem
+    479
+    480     elif 8192 <= mem < 65536:
+    481         swap = mem / 2
+    482
+    483     else:
+    484         swap = 4096
+    485
+    486     if hibernation:
+    487         if mem <= 65536:
+    488             swap = mem + swap
+    489         else:
+    490             log.info("Ignoring --hibernation option on systems with 64 GB of RAM or more")
+    491
+    492     if disk_space is not None and not hibernation:
+    493         max_swap = int(disk_space * MAX_SWAP_DISK_RATIO)
+    494         if swap > max_swap:
+    495             log.info("Suggested swap size (%(swap)d M) exceeds %(percent)d %% of "
+    496                      "disk space, using %(percent)d %% of disk space (%(size)d M) "
+    497                      "instead." % {"percent": MAX_SWAP_DISK_RATIO*100,
+    498                                    "swap": swap,
+    499                                    "size": max_swap})
+    500             swap = max_swap
+    501
+    502     if not quiet:
+    503     log.info("Swap attempt of %sM", swap)
+    504
+    505     #we have to return minimum and maximum swap size
+    506     return (swap, swap)
+
+So the logic is as follows. Here mem is your RAM/physical Memory.
+Raw
+
+   474     if mem < 2048:
+    475         swap = 2 * mem
+    476
+    477     elif 2048 <= mem < 8192:
+    478         swap = mem
+    479
+    480     elif 8192 <= mem < 65536:
+    481         swap = mem / 2
+    482
+    483     else:
+    484         swap = 4096

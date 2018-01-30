@@ -1,0 +1,14 @@
+Problem Statement
+系统安装oracle时，参数问题
+Description
+系统中# sysctl -a中，kernel.shmmax参数，kernel.shmall参数，kernel.shmmni参数，这里可以设置最大值是多少？这几个参数之间有什么关系？假如我系统内存是512GB，是否可以把kernel.shmmax参数设置为512G？如果可以，那么另外两个参数该怎么设置？
+
+Solution
+
+    SHMMAX, This parameter defines the maximum size in bytes of a single shared memory segment that a Linux process can allocate in its virtual address space.
+    SHMMNI, This parameter sets the system wide maximum number of shared memory segments.
+    SHMALL, This parameter sets the total amount of shared memory pages that can be used system wide.
+
+shmmax:一个共享内存段最大为多少字节
+shmmni:系统中可以有多少个共享内存段
+shmall：系统中最多总共可以有多少共享内存页

@@ -1,0 +1,33 @@
+Problem Statement
+su - app 报错-bash: fork: retry: Resource temporarily unavailable
+Description
+无法su到app用户
+
+Solution
+/var/log/secure下有如下报错：
+ 2555 Aug 16 19:16:35 ngcrmapp10 sshd[11211]: pam_keyinit(sshd:session): Unable to change UID to 857 temporarily
+ 2556 Aug 16 19:16:35 ngcrmapp10 sshd[11211]: pam_keyinit(sshd:session): Unable to change UID to 857 temporarily
+ 2557 Aug 16 19:16:35 ngcrmapp10 sshd[11211]: pam_unix(sshd:session): session opened for user app by (uid=0)
+ 2558 Aug 16 19:17:04 ngcrmapp10 sshd[11468]: Received disconnect from 127.0.0.1: 11: disconnected by user
+ 2559 Aug 16 19:17:04 ngcrmapp10 sshd[11211]: pam_unix(sshd:session): session closed for user app
+ 2560 Aug 16 19:18:50 ngcrmapp10 sshd[11711]: Accepted password for app from 127.0.0.1 port 48280 ssh2
+ 2561 Aug 16 19:18:50 ngcrmapp10 sshd[11711]: pam_keyinit(sshd:session): Unable to change UID to 857 temporarily
+ 2562 Aug 16 19:18:50 ngcrmapp10 sshd[11711]: pam_keyinit(sshd:session): Unable to change UID to 857 temporarily
+
+请执行命令
+#ps -eLf | grep app | wc -l　查看app用户开启了多少进程．
+应该适当增加nproc的值来避免此问题
+
+reply from cu:
+在有问题的这台系统中没有/etc/security/limits.d/90-nproc.conf这个配置文件
+昨天我新建了一个，添加了如下内容：
+*        soft              nproc              12000
+root       soft            nproc              12000
+但是修改之后没有生效
+
+与问题单01686064问题相同，查看了anaconda-ks.cfg，应该是批量部署时生成的此脚本
+601 /bin/cat > /etc/profile.d/ulimit.sh << _ulimit
+602 #!/bin/bash
+603 [ "\$(id -u)" == "0" ] && ulimit -n 1048576
+604 ulimit -u 10000
+605 _ulimit

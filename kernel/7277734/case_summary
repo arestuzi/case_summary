@@ -1,0 +1,74 @@
+Problem Statement
+关于参数调整
+Description
+/etc/security/limits.conf
+
+* soft nofile 65536
+* hard nofile 65536
+* soft nproc 16384
+* hard nproc 16384
+和
+*      -       nofile  65536
+*      -       nproc   unlimited
+的区别？
+
+如果上面的参数已经配置了，那下面的参数还有意义吗？
+/etc/security/limits.d/90-nproc.conf
+@dba    soft    nproc   unlimited
+@sapsys  soft    nproc   unlimited
+
+"您在哪里遇到了这个问题？在什么环境下遇到这个问题？"
+
+rhel6.5   装sap时
+
+Solution
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/etc/security/limits.conf
+
+* soft nofile 65536
+* hard nofile 65536
+* soft nproc 16384
+* hard nproc 16384
+和
+*      -       nofile  65536
+*      -       nproc   unlimited
+的区别？
+无区别，只是soft hard分开写可以对soft设定不同的值。
+“-”只是把soft hard合并在一起，修改参数时相当于同时修改soft和hard的值
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+如果上面的参数已经配置了，那下面的参数还有意义吗？
+/etc/security/limits.d/90-nproc.conf
+@dba    soft    nproc   unlimited
+@sapsys  soft    nproc   unlimited
+
+对单个用户组或用户设置相应的限制，优先级会大于"*"
+
+如果同时设置了
+* soft nproc 16384
+* hard nproc 16384
+和
+@dba    soft    nproc   unlimited
+@sapsys  soft    nproc   unlimited
+
+那么对于用户组dba sapsys，则此设定生效，用相应账户登录后，nproc对应的值应为unlimited
+
+从配置文件的读取顺序可以看出
+open("/etc/security/limits.conf", O_RDONLY) = 3 <---- limits.conf
+fstat(3, {st_mode=S_IFREG|0644, st_size=1905, ...}) = 0
+mmap(NULL, 4096, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0) = 0x7f86ddf8f000
+read(3, "# /etc/security/limits.conf\n#\n#E"..., 4096) = 1905
+read(3, "", 4096)                       = 0
+close(3)                                = 0
+munmap(0x7f86ddf8f000, 4096)            = 0
+open("/etc/security/limits.d", O_RDONLY|O_NONBLOCK|O_DIRECTORY|O_CLOEXEC) = 3
+getdents(3, /* 3 entries */, 32768)     = 88
+open("/usr/lib64/gconv/gconv-modules.cache", O_RDONLY) = 4
+fstat(4, {st_mode=S_IFREG|0644, st_size=26060, ...}) = 0
+mmap(NULL, 26060, PROT_READ, MAP_SHARED, 4, 0) = 0x7f86ddf89000
+close(4)                                = 0
+futex(0x7f86dd95b828, FUTEX_WAKE_PRIVATE, 2147483647) = 0
+getdents(3, /* 0 entries */, 32768)     = 0
+close(3)                                = 0
+open("/etc/security/limits.d/90-nproc.conf", O_RDONLY) = 3  <---90-nporc.conf
+
+用户相同的情况下,90-nproc.conf的配置会覆盖limits.conf中的配置，所以nproc值应为1024
