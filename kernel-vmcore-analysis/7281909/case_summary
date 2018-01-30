@@ -1,0 +1,137 @@
+Problem Statement
+系统无故重启
+Description
+我的系统装的是redhat 7.0,最近一段时间系统经常无故重启
+Solution
+I am posting this comment in English but please let us know if you would
+like to get it translated.
+
+VM crashed after following messages:
+
+[72153.539006] BUG: scheduling while atomic: swapper/0/0/0x00000100
+[72153.539017] Modules linked in: binfmt_misc vmw_vsock_vmci_transport vsock ip6table_filter ip6_tables iptable_filter ip_tables ebtable_nat ebtables sg vmw_balloon coretemp crct10dif_pclmul crc32_pclmul crc32c_intel ghash_clmulni_intel aesni_intel lrw gf128mul glue_helper ablk_helper cryptd serio_raw pcspkr i2c_piix4 vmw_vmci shpchp mperf nfsd auth_rpcgss nfs_acl lockd sunrpc uinput ext4 mbcache jbd2 sr_mod cdrom ata_generic pata_acpi sd_mod crc_t10dif crct10dif_common vmwgfx ttm drm ata_piix vmxnet3 libata vmw_pvscsi i2c_core floppy dm_mirror dm_region_hash dm_log dm_mod
+[72153.539056] CPU: 0 PID: 0 Comm: swapper/0 Not tainted 3.10.0-123.el7.x86_64 #1
+[72153.539059] Hardware name: VMware, Inc. VMware Virtual Platform/440BX Desktop Reference Platform, BIOS 6.00 09/30/2014
+[72153.539062]  ffff88083fc03ce0 d81152eedc3fdf8c ffff88083fc03b30 ffffffff815e19ba
+[72153.539066]  ffff88083fc03b40 ffffffff815dbfe9 ffff88083fc03ba0 ffffffff815e718b
+[72153.539069]  ffffffff818c3fd8 0000000000014580 ffffffff818c3fd8 0000000000014580
+[72153.539073] Call Trace:
+[72153.539076]  <IRQ>  [<ffffffff815e19ba>] dump_stack+0x19/0x1b
+[72153.539089]  [<ffffffff815dbfe9>] __schedule_bug+0x4d/0x5b
+[72153.539093]  [<ffffffff815e718b>] __schedule+0x78b/0x790
+[72153.539097]  [<ffffffff815e71b9>] schedule+0x29/0x70
+[72153.539100]  [<ffffffff815e50b9>] schedule_timeout+0x209/0x2d0
+[72153.539123]  [<ffffffff810a1c37>] ? enqueue_entity+0x237/0x890
+[72153.539127]  [<ffffffff810a11cd>] ? check_preempt_wakeup+0x11d/0x250
+[72153.539131]  [<ffffffff815e76e6>] wait_for_completion+0x116/0x170
+[72153.539135]  [<ffffffff81097700>] ? wake_up_state+0x20/0x20
+[72153.539141]  [<ffffffff810ff6a0>] ? __call_rcu+0x2c0/0x2c0
+[72153.539147]  [<ffffffff810826ab>] wait_rcu_gp+0x5b/0x80
+[72153.539151]  [<ffffffff81082630>] ? ftrace_raw_output_rcu_utilization+0x50/0x50
+[72153.539154]  [<ffffffff810976c3>] ? wake_up_process+0x23/0x40
+[72153.539158]  [<ffffffff810fef5b>] synchronize_sched+0x3b/0x50
+[72153.539166]  [<ffffffffa03679d0>] vmci_event_unsubscribe+0x70/0xb0 [vmw_vmci]
+[72153.539170]  [<ffffffffa03a6611>] vmci_transport_destruct+0x21/0xe0 [vmw_vsock_vmci_transport]
+[72153.539174]  [<ffffffffa039c867>] vsock_sk_destruct+0x17/0x60 [vsock]
+[72153.539180]  [<ffffffff814bb73f>] __sk_free+0x1f/0x170
+[72153.539184]  [<ffffffff814bb8b1>] sk_free+0x21/0x30
+[72153.539188]  [<ffffffffa03a72bb>] vmci_transport_recv_stream_cb+0x1fb/0x2e0 [vmw_vsock_vmci_transport]
+[72153.539192]  [<ffffffff81090a24>] ? __wake_up+0x44/0x50
+[72153.539197]  [<ffffffffa0366f1c>] vmci_datagram_invoke_guest_handler+0xbc/0xf0 [vmw_vmci]
+[72153.539202]  [<ffffffffa0367e6f>] vmci_dispatch_dgs+0xcf/0x230 [vmw_vmci]
+[72153.539207]  [<ffffffff81066eae>] tasklet_action+0x6e/0x110
+[72153.539211]  [<ffffffff81067047>] __do_softirq+0xf7/0x290
+[72153.539215]  [<ffffffff815f3a5c>] call_softirq+0x1c/0x30
+[72153.539222]  [<ffffffff81014d25>] do_softirq+0x55/0x90
+[72153.539225]  [<ffffffff810673e5>] irq_exit+0x115/0x120
+[72153.539229]  [<ffffffff815f4358>] do_IRQ+0x58/0xf0
+[72153.539232]  [<ffffffff815e94ad>] common_interrupt+0x6d/0x6d
+[72153.539234]  <EOI>  [<ffffffff81046346>] ? native_safe_halt+0x6/0x10
+[72153.539266]  [<ffffffff8101b39f>] default_idle+0x1f/0xc0
+[72153.539277]  [<ffffffff8101bc96>] arch_cpu_idle+0x26/0x30
+[72153.539284]  [<ffffffff810b4725>] cpu_startup_entry+0xf5/0x290
+[72153.539293]  [<ffffffff815c3927>] rest_init+0x77/0x80
+[72153.539300]  [<ffffffff81a06fa7>] start_kernel+0x429/0x44a
+[72153.539306]  [<ffffffff81a06987>] ? repair_env_string+0x5c/0x5c
+[72153.539312]  [<ffffffff81a06120>] ? early_idt_handlers+0x120/0x120
+[72153.539318]  [<ffffffff81a065ee>] x86_64_start_reservations+0x2a/0x2c
+[72153.539323]  [<ffffffff81a06742>] x86_64_start_kernel+0x152/0x175
+[72153.539328] bad: scheduling from the idle thread!
+[72153.539334] CPU: 0 PID: 0 Comm: swapper/0 Tainted: G        W   --------------   3.10.0-123.el7.x86_64 #1
+[72153.539338] Hardware name: VMware, Inc. VMware Virtual Platform/440BX Desktop Reference Platform, BIOS 6.00 09/30/2014
+[72153.539341]  ffff88083fc14580 d81152eedc3fdf8c ffff88083fc03af0 ffffffff815e19ba
+[72153.539347]  ffff88083fc03b08 ffffffff8109b0e0 ffff88083fc14580 ffff88083fc03b30
+[72153.539352]  ffffffff810915ae 00000001dc3fdf8c ffffffff818d5440 ffffffff818d5440
+[72153.539358] Call Trace:
+[72153.539362]  <IRQ>  [<ffffffff815e19ba>] dump_stack+0x19/0x1b
+[72153.539371]  [<ffffffff8109b0e0>] dequeue_task_idle+0x30/0x90
+[72153.539378]  [<ffffffff810915ae>] dequeue_task+0x5e/0xa0
+[72153.539385]  [<ffffffff81094c63>] deactivate_task+0x23/0x30
+[72153.539392]  [<ffffffff815e6e81>] __schedule+0x481/0x790
+[72153.539399]  [<ffffffff815e71b9>] schedule+0x29/0x70
+[72153.539405]  [<ffffffff815e50b9>] schedule_timeout+0x209/0x2d0
+[72153.539412]  [<ffffffff810a1c37>] ? enqueue_entity+0x237/0x890
+[72153.539419]  [<ffffffff810a11cd>] ? check_preempt_wakeup+0x11d/0x250
+[72153.539426]  [<ffffffff815e76e6>] wait_for_completion+0x116/0x170
+[72153.539432]  [<ffffffff81097700>] ? wake_up_state+0x20/0x20
+[72153.539439]  [<ffffffff810ff6a0>] ? __call_rcu+0x2c0/0x2c0
+[72153.539446]  [<ffffffff810826ab>] wait_rcu_gp+0x5b/0x80
+[72153.539453]  [<ffffffff81082630>] ? ftrace_raw_output_rcu_utilization+0x50/0x50
+[72153.539460]  [<ffffffff810976c3>] ? wake_up_process+0x23/0x40
+[72153.539485]  [<ffffffff810fef5b>] synchronize_sched+0x3b/0x50
+[72153.539491]  [<ffffffffa03679d0>] vmci_event_unsubscribe+0x70/0xb0 [vmw_vmci]
+[72153.539494]  [<ffffffffa03a6611>] vmci_transport_destruct+0x21/0xe0 [vmw_vsock_vmci_transport]
+[72153.539498]  [<ffffffffa039c867>] vsock_sk_destruct+0x17/0x60 [vsock]
+[72153.539501]  [<ffffffff814bb73f>] __sk_free+0x1f/0x170
+[72153.539505]  [<ffffffff814bb8b1>] sk_free+0x21/0x30
+[72153.539509]  [<ffffffffa03a72bb>] vmci_transport_recv_stream_cb+0x1fb/0x2e0 [vmw_vsock_vmci_transport]
+[72153.539512]  [<ffffffff81090a24>] ? __wake_up+0x44/0x50
+[72153.539516]  [<ffffffffa0366f1c>] vmci_datagram_invoke_guest_handler+0xbc/0xf0 [vmw_vmci]
+[72153.539521]  [<ffffffffa0367e6f>] vmci_dispatch_dgs+0xcf/0x230 [vmw_vmci]
+[72153.539524]  [<ffffffff81066eae>] tasklet_action+0x6e/0x110
+[72153.539528]  [<ffffffff81067047>] __do_softirq+0xf7/0x290
+[72153.539531]  [<ffffffff815f3a5c>] call_softirq+0x1c/0x30
+[72153.539534]  [<ffffffff81014d25>] do_softirq+0x55/0x90
+[72153.539538]  [<ffffffff810673e5>] irq_exit+0x115/0x120
+[72153.539541]  [<ffffffff815f4358>] do_IRQ+0x58/0xf0
+[72153.539544]  [<ffffffff815e94ad>] common_interrupt+0x6d/0x6d
+[72153.539546]  <EOI>  [<ffffffff81046346>] ? native_safe_halt+0x6/0x10
+[72153.539551]  [<ffffffff8101b39f>] default_idle+0x1f/0xc0
+[72153.539554]  [<ffffffff8101bc96>] arch_cpu_idle+0x26/0x30
+[72153.539558]  [<ffffffff810b4725>] cpu_startup_entry+0xf5/0x290
+[72153.539561]  [<ffffffff815c3927>] rest_init+0x77/0x80
+[72153.539564]  [<ffffffff81a06fa7>] start_kernel+0x429/0x44a
+[72153.539567]  [<ffffffff81a06987>] ? repair_env_string+0x5c/0x5c
+[72153.539570]  [<ffffffff81a06120>] ? early_idt_handlers+0x120/0x120
+[72153.539573]  [<ffffffff81a065ee>] x86_64_start_reservations+0x2a/0x2c
+[72153.539576]  [<ffffffff81a06742>] x86_64_start_kernel+0x152/0x175
+
+This VM appears to be hitting a known issue which is explained in the following
+article:
+
+System crash at activate_task() which was called from VMCI module
+https://access.redhat.com/solutions/1582653
+
+And is fixed in the following kernels (and newer):
+
+    Fix is available for Red Hat Enterprise Linux 7.2z - kernel-3.10.0-327.10.1.el7 via RHSA-2016-0185
+    Fix is available for Red Hat Enterprise Linux 7.1z - kernel-3.10.0-229.28.1.el7 via RHSA-2016-0452
+
+Before these kernels the vmci_dispatch_dgs() tasklet in the VMWare vmci driver
+could previously cause a socket to be freed, which could lead to a call to the
+blocking synchronize_rcu() function while in softirq context. This could
+potentially interrupt the idle/swapper task, causing a kernel crash. In this
+update, interrupt handling in the VMWare vmci driver is redesigned which should
+prevent the crash.
+
+Workaround
+Disable the VMCI driver as indicated in the VMware KB
+https://kb.vmware.com/s/article/1010806
+
+To disable VMCI
+    Edit the .vmx file and change the value of vmci0.present to "FALSE" and comment out vmci0 lines.
+    
+vi <server_name>.vmx
+vmci0.present = "FALSE"
+#vmci0.pciSlotNumber = "32"
+#vmci0.id = "1868206774"

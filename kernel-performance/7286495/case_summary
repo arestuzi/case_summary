@@ -1,0 +1,125 @@
+Problem Statement
+After Redhat installation, the install the program of our company(ZTE corporation), the CPU is abnormally slow, the efficiency is too low to affect the business.在新到货的Dell PER930机器安装了Redhat6.6系统，再安装上中兴通讯的NDS数据采集程序，CPU处理器效率比其他同型号同配置并且安装同样的数据采集程序的机器慢15倍。
+Description
+
+在新到货的Dell PER930机器（CPU型号：Xeon Processor E7-48XX V3 C600 Chipset, Dell官方网站显示此款CPU与Redhat6.6以上版本系统匹配）安装了Redhat6.6系统，再安装上中兴通讯的NDS数据采集程序，服务器处理器效率比其他同型号同配置并且安装同样的数据采集程序的机器慢15倍，严重影响正常商用运作。
+
+Solution
+The perf data still shows the major CPU usage from 'bc', but as it's hard to have the exactly same environment as yours, I can't get the symbols which were used by 'bc'. It looks like your system also didn't have the symbols for bc and glibc yet. Please install debuginfo for those and run 'perf report' again.
+
+-----------------------------------------------------------------------------------
+# Overhead         Command               Shared Object                                                 Symbol
+# ........  ..............  ..........................  .....................................................
+#
+    71.60%              bc  bc                          [.] 0x00000000000098a2
+                        |
+                        |--17.78%-- 0x40ae61
+                        |
+                        |--11.26%-- 0x40ae50
+                        |
+                        |--6.62%-- 0x40ae4d
+                        |
+                        |--5.46%-- 0x40ae63
+                        |
+                        |--3.84%-- 0x40a996
+                        |          |
+                        |          |--1.56%-- 0x17d0050
+                        |          |
+                        |          |--1.55%-- 0x17c9d50
+                        |          |
+                        |          |--1.54%-- 0x17c9a70
+                        |          |
+                        |          |--1.53%-- 0x17c87a0
+                        |          |
+                        |          |--1.53%-- 0x17cd2a0
+                        |          |
+                        |          |--1.53%-- 0x17cca70
+                        |          |
+                        |          |--1.53%-- 0x17ccbc0
+                        |          |
+                        |          |--1.52%-- 0x17cd1a0
+                        |          |
+                        |          |--1.52%-- 0x17cd1d0
+                        |          |
+                        |          |--1.51%-- 0x17ccfa0
+                        |          |
+                        |          |--1.49%-- 0x17ccbf0
+....
+
+
+
+    13.70%            init  [kernel.kallsyms]           [k] intel_idle
+                      |
+                      --- intel_idle
+                         |
+                         |--99.97%-- cpuidle_idle_call
+                         |          cpu_idle
+                         |          start_secondary
+                          --0.03%-- [...]
+
+     0.92%              bc  libc-2.12.so                [.] _int_malloc
+                        |
+                        --- _int_malloc
+
+     0.80%            init  [kernel.kallsyms]           [k] find_busiest_group
+                      |
+                      --- find_busiest_group
+                         |
+                         |--99.12%-- rebalance_domains
+                         |          run_rebalance_domains
+                         |          __do_softirq
+                         |          call_softirq
+                         |          do_softirq
+                         |          irq_exit
+                         |          |
+                         |          |--94.70%-- scheduler_ipi
+                         |          |          smp_reschedule_interrupt
+                         |          |          reschedule_interrupt
+                         |          |          |
+                         |          |          |--99.99%-- cpuidle_idle_call
+                         |          |          |          cpu_idle
+                         |          |          |          start_secondary
+                         |          |           --0.01%-- [...]
+
+-----------------------------------------------------------------------------------
+
+Also, to confirm the CPU itself has the same CPU power, please run the below application on both normal and abnormal systems and share the output with us.
+
+-----------------------------------------------------------------------------------
+#include <stdio.h>
+#include <string.h>
+
+int main(int argc, char *p_argv[])
+{
+  int i, j;
+
+  printf("Begin\n");
+
+  for (i = 0; i < 1000000; i++) {
+    for (j = 0; j < 100000; j++) {
+    }
+  }
+  printf("End\n");
+  return 0;
+}
+-----------------------------------------------------------------------------------
+
+Please above as file 'cputest.c' and compile and run it by follow the below steps.
+
+-----------------------------------------------------------------------------------
+$ gcc -o cputest cputest.c
+$ time ./cputest
+-----------------------------------------------------------------------------------
+
+[root@SHTnewNDS1 test]# gcc -o cputest cputest.c
+[root@SHTnewNDS1 test]# time ./cputest
+Begin
+^C
+
+real    28m55.452s
+user    28m56.670s
+sys     0m0.023s
+
+I'm not sure if it's caused by faulty CPU, but we are seeing that the CPUs are providing much low performance regardless which parts of code we are running.
+
+If it's related to library or kernel, that something we Red Hat will check, but it was even showing very slow performance for the simple arithmetic loop which doesn't require any library nor kernel function's help. At this stage, we are concerning the system itself is just too slow somehow and most possibly caused by slow CPUs. That's the reason I was asking to install other vendor's OS such as Windows or Ubuntu to confirm this. If other OSes also show the same issues, we can fully confirm that it's the CPU that is failing providing enough throughput. Thanks.

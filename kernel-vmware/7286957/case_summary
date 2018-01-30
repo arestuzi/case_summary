@@ -1,0 +1,57 @@
+Problem Statement
+咨询内存占用率一直过高的问题
+Description
+32G内存的系统，内存占用从原来的10G，迅速攀升到20G，使用top命令观察，发现java进程占用最多，但加起来约占20%左右，请协助排查其余内存是哪些进程占用的，该如何释放？
+[root@cconinter03 ~]# free -m
+             total       used       free     shared    buffers     cached
+Mem:         32234      30974       1259          0        267       3090
+-/+ buffers/cache:      27616       4617
+Swap:         3999          4       3995
+二、TOP命令输出
+Swap:  4095992k total,     4432k used,  4091560k free,  3164440k cached
+
+  PID USER      PR  NI  VIRT  RES  SHR S %CPU %MEM    TIME+  COMMAND
+53286 zhaoguos  20   0 8686m 1.9g  10m S  4.5  5.9   8:44.67 java
+53257 zhaoguos  20   0 8689m 1.7g  10m S  1.5  5.3   8:52.47 java
+53326 zhaoguos  20   0 7264m 1.3g  10m S  0.0  4.0   1:46.86 java
+53355 zhaoguos  20   0 7264m 1.3g  10m S  0.0  4.0   1:55.37 java
+Solution
+
+观察到您的系统为Vmware虚拟机.
+dmidecode | grep -A 2 "^System Information"
+System Information
+    Manufacturer: VMware, Inc.
+    Product Name: VMware Virtual Platform
+
+相关驱动:
+vmware_balloon          7199  0•
+
+占用过高的问题,怀疑是和Vmware的动态内存管理有关.ESXi内存压力大的时候,会把空闲虚拟机上的内存挪给其他需要内存的虚拟机用. 具体您可以通过查看vmware_balloon 驱动使用了多少内存来验证是否与此问题相关.
+验证方法:
+mount -t debugfs nodev /sys/kernel/debug
+# cat /sys/kernel/debug/vmmemctl
+target:              2059978 pages
+current:             2059978 pages
+rateNoSleepAlloc:      16384 pages/sec
+rateSleepAlloc:         2048 pages/sec
+rateFree:              16384 pages/sec
+
+timer:                  1275
+start:                     1 (   0 failed)
+guestType:                 1 (   0 failed)
+lock:                2060022 (  30 failed)
+unlock:                   14 (   0 failed)
+target:                 1275 (   0 failed)
+primNoSleepAlloc:    2060022 (   0 failed)
+primCanSleepAlloc:         0 (   0 failed)
+primFree:                 14
+errAlloc:                 30
+errFree:                  30
+
+current: line is showing the amount of memory in pages currently consumed by the balloon driver.
+
+target: line is showing the amount of memory in pages the balloon driver is going to consume.
+
+The above applies only to Red Hat shipped balloon driver for VMWare virtualized RHEL6 systems. RHEL5 systems are not shipped with Red Hat provided balloon driver, see VMware balloon driver support in RHEL article for the details. The above does not apply to VMWare shipped balloon driver, such an information can be obtained from the hypervisor side.
+
+To calulate the amount of memory the balloon driver has consumed, just multiply the number of pages by the page size of your hardware architecture. For this given example, assuming this is a x86 architecture (which has page size of 4 kilobytes), the total memory used by the ballooning driver is 2059978 times 4 kilobytes, which gives approximately 8 Gb.

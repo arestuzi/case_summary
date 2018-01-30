@@ -1,0 +1,28 @@
+Problem Statement
+咨询ipcs -q参数
+Description
+ipcs -q 的输出中perms      used-bytes   messages是什么意思，如何查看一个消息的大小
+Solution
+
+以下是messages resource的整个结构体
+struct msqid_ds
+  288          struct ipc_perm msg_perm; /* Ownership and permissions */
+  289          struct msg *msg_first;  /* first message on queue (internal) */
+  290          struct msg *msg_last;   /* last message in queue (internal) */
+  291          time_t msg_stime;       /* last msgsnd time */
+  292          time_t msg_rtime;       /* last msgrcv time */
+  293          time_t msg_ctime;       /* last change time */
+  294          struct wait_queue *wwait; /* writers waiting (internal) */
+  295          struct wait_queue *rwait; /* readers waiting (internal) */
+  296          ushort msg_cbytes;      /* number of bytes used on queue */
+  297          ushort msg_qnum;        /* number of messages in queue */
+  298          ushort msg_qbytes;      /* max number of bytes on queue */
+  299          ushort msg_lspid;       /* pid of last msgsnd */
+  300          ushort msg_lrpid;       /* pid of last msgrcv */
+
+ipcs -q的输出中：
+perm: struct ipc_perm msg_perm; /* Ownership and permissions */
+used-bytes: ushort msg_cbytes;      /* number of bytes used on queue */
+messages: ushort msg_qnum;        /* number of messages in queue */
+
+结构体中并没有对单个message进行定义，所以无法定义其大小。只对queue进行了定义： ushort msg_qbytes;      /* max number of bytes on queue */

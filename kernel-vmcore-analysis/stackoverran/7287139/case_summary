@@ -1,0 +1,157 @@
+Problem Statement
+系统宕机重启生成25Gvmcore日志
+Description
+在生产环境华为高性能服务器X6800的硬件平台，redhat系统，遇到系统无故重启，检查无硬件问题，生成vmcore日志
+Solution
+经过对vmcore文件的初步分析，我们可以确认系统出现异常是因为stack corrupted导致：
+~~~
+Kernel panic - not syncing: stack-protector: Kernel stack is corrupted in: ffffffff8128affe
+~~~
+
+查看出现问题进程的信息：
+~~~
+crash> bt
+PID: 12304  TASK: ffff8821064a3540  CPU: 8   COMMAND: "mysqld"
+ #0 [ffff883db2ae18b8] schedule at ffffffff815278c2
+ #1 [ffff883db2ae18c0] thread_return at ffffffff81527f10
+ #2 [ffff883db2ae1980] io_schedule at ffffffff815280a3
+ #3 [ffff883db2ae19a0] __blockdev_direct_IO_newtrunc at ffffffff811c89cd
+ #4 [ffff883db2ae1b50] __blockdev_direct_IO at ffffffff811c9137
+ #5 [ffff883db2ae1bd0] xfs_vm_direct_IO at ffffffffa03a486c [xfs]
+ #6 [ffff883db2ae1c60] generic_file_direct_write at ffffffff81120552
+ #7 [ffff883db2ae1cd0] xfs_file_dio_aio_write at ffffffffa03ab33a [xfs]
+ #8 [ffff883db2ae1d60] xfs_file_aio_write at ffffffffa03ab7bf [xfs]
+ #9 [ffff883db2ae1dc0] do_sync_write at ffffffff81188c7a
+#10 [ffff883db2ae1ef0] vfs_write at ffffffff81188f78
+#11 [ffff883db2ae1f30] sys_pwrite64 at ffffffff81189932
+#12 [ffff883db2ae1f80] system_call_fastpath at ffffffff8100b072
+    RIP: 0000003affa0f0d3  RSP: 00007fa9b2ae9468  RFLAGS: 00010206
+    RAX: 0000000000000012  RBX: ffffffff8100b072  RCX: 0000000000000000
+    RDX: 0000000000100000  RSI: 00007fa5800c0000  RDI: 00000000000008fc
+    RBP: 00007fa9b2ae9460   R8: 0000000000100000   R9: 00000004f6d00000
+    R10: 00000004f6d00000  R11: 0000000000000293  R12: 00007fa7b08fefd8
+    R13: 0000000000100000  R14: 00000004f6d00000  R15: 0000000000100000
+    ORIG_RAX: 0000000000000012  CS: 0033  SS: 002b
+
+crash> task_struct.stack ffff8821064a3540
+  stack = 0xffff883db2ae0000
+crash> thread_info.task,cpu 0xffff883db2ae0000
+  task = 0x97       <==incorrect,should be ffff8821064a3540
+  cpu = 4268237448  <==incorrect,should be 8
+~~~
+
+可以看到出现了stack corrupted现象，但是在当前信息中没有发现异常的情况：
+~~~
+crash> bt -T
+PID: 12304  TASK: ffff8821064a3540  CPU: 8   COMMAND: "mysqld"
+  [ffff883db2ae0070] call_rcu_sched at ffffffff810ec785
+  [ffff883db2ae00a0] free_pcppages_bulk at ffffffff8112eef2
+  [ffff883db2ae0160] free_buffer_head at ffffffff811bd7eb
+  [ffff883db2ae01b0] __pagevec_free at ffffffff8112feb4
+  [ffff883db2ae01c0] __remove_mapping at ffffffff81138418
+  [ffff883db2ae0200] shrink_page_list.clone.3 at ffffffff811393cc
+  [ffff883db2ae0350] shrink_inactive_list at ffffffff8113a10a
+  [ffff883db2ae0440] determine_dirtyable_memory at ffffffff81133a8a
+  [ffff883db2ae0460] get_dirty_limits at ffffffff81133b47
+  [ffff883db2ae04c0] throttle_vm_writeout at ffffffff81133e4f
+  [ffff883db2ae0510] free_pcppages_bulk at ffffffff8112eef2
+  [ffff883db2ae05d0] free_buffer_head at ffffffff811bd7eb
+  [ffff883db2ae0620] __pagevec_free at ffffffff8112feb4
+  [ffff883db2ae0630] __remove_mapping at ffffffff81138418
+  [ffff883db2ae0670] shrink_page_list.clone.3 at ffffffff811393cc
+  [ffff883db2ae07c0] shrink_inactive_list at ffffffff8113a10a
+  [ffff883db2ae0890] __alloc_pages_nodemask at ffffffff8112f3a3
+  [ffff883db2ae08b0] determine_dirtyable_memory at ffffffff81133a8a
+  [ffff883db2ae08d0] get_dirty_limits at ffffffff81133b47
+  [ffff883db2ae0930] throttle_vm_writeout at ffffffff81133e4f
+  [ffff883db2ae0970] shrink_mem_cgroup_zone at ffffffff8113a77e
+  [ffff883db2ae0990] css_get_next at ffffffff810cb4e7
+  [ffff883db2ae09f0] mem_cgroup_iter at ffffffff81179ffd
+  [ffff883db2ae0a40] shrink_zone at ffffffff8113aa8c
+  [ffff883db2ae0aa0] zone_watermark_ok at ffffffff81123cef
+  [ffff883db2ae0ab0] zone_reclaim at ffffffff8113b78d
+  [ffff883db2ae0b50] free_block at ffffffff8117089c
+  [ffff883db2ae0c20] free_buffer_head at ffffffff811bd7eb
+  [ffff883db2ae0c70] __pagevec_free at ffffffff8112feb4
+  [ffff883db2ae0c80] __remove_mapping at ffffffff81138418
+  [ffff883db2ae0cc0] shrink_page_list.clone.3 at ffffffff811393cc
+  [ffff883db2ae0e10] shrink_inactive_list at ffffffff8113a10a
+  [ffff883db2ae0eb0] kmem_zone_zalloc at ffffffffa03a400a [xfs]
+  [ffff883db2ae0ed0] xfs_bmbt_init_cursor at ffffffffa036962a [xfs]
+  [ffff883db2ae0ee0] xfs_trans_read_buf at ffffffffa039ea8d [xfs]
+  [ffff883db2ae0f00] determine_dirtyable_memory at ffffffff81133a8a
+  [ffff883db2ae0f20] get_dirty_limits at ffffffff81133b47
+  [ffff883db2ae0f30] xfs_btree_dup_cursor at ffffffffa036b634 [xfs]
+  [ffff883db2ae0f80] throttle_vm_writeout at ffffffff81133e4f
+  [ffff883db2ae0fc0] shrink_mem_cgroup_zone at ffffffff8113a77e
+  [ffff883db2ae0fe0] css_get_next at ffffffff810cb4e7
+  [ffff883db2ae1040] mem_cgroup_iter at ffffffff81179ffd
+  [ffff883db2ae1090] shrink_zone at ffffffff8113aa8c
+  [ffff883db2ae10f0] zone_watermark_ok at ffffffff81123cef
+  [ffff883db2ae1100] zone_reclaim at ffffffff8113b78d
+  [ffff883db2ae1180] __rmqueue at ffffffff8112bc42
+  [ffff883db2ae11e0] xfs_btree_insert at ffffffffa036fb47 [xfs]
+  [ffff883db2ae11f8] zone_statistics at ffffffff811422b9
+  [ffff883db2ae1300] mempool_alloc_slab at ffffffff811220e5
+  [ffff883db2ae1320] MR_BuildRaidContext at ffffffffa004096f [megaraid_sas]
+  [ffff883db2ae13e0] swiotlb_map_sg_attrs at ffffffff812986e9
+  [ffff883db2ae1440] scsi_dma_map at ffffffff8138aca0
+  [ffff883db2ae1490] megasas_build_io_fusion at ffffffffa003cd1f [megaraid_sas]
+  [ffff883db2ae14d0] megasas_fire_cmd_fusion at ffffffffa003be41 [megaraid_sas]
+  [ffff883db2ae1560] mempool_alloc_slab at ffffffff811220e5
+  [ffff883db2ae1580] MR_BuildRaidContext at ffffffffa004096f [megaraid_sas]
+  [ffff883db2ae15e0] vga_set_mem_top at ffffffff812ce4c9
+  [ffff883db2ae1600] vgacon_scroll at ffffffff812ce5d7
+  [ffff883db2ae1610] number at ffffffff8128a5ee
+  [ffff883db2ae1620] notifier_call_chain at ffffffff8152d4d6
+  [ffff883db2ae1640] notifier_call_chain at ffffffff8152d4d6
+  [ffff883db2ae1680] atomic_notifier_call_chain at ffffffff8152d57a
+  [ffff883db2ae1690] notify_update at ffffffff81344a8e
+  [ffff883db2ae16b0] vt_console_print at ffffffff81346490
+  [ffff883db2ae1710] __call_console_drivers at ffffffff81071fc5
+  [ffff883db2ae1718] apic_timer_interrupt at ffffffff8100bb8e
+  [ffff883db2ae1778] vprintk at ffffffff81072d81
+  [ffff883db2ae17c0] kobject_put at ffffffff812842b7
+  [ffff883db2ae17e0] put_device at ffffffff81369107
+  [ffff883db2ae17f0] scsi_request_fn at ffffffff8138868b
+  [ffff883db2ae1840] printk at ffffffff81527303
+  [ffff883db2ae18a0] __schedule_bug at ffffffff8105db71
+  [ffff883db2ae18c0] thread_return at ffffffff81527f10
+  [ffff883db2ae18d0] dm_table_unplug_all at ffffffffa000443c [dm_mod]
+  [ffff883db2ae1930] ktime_get_ts at ffffffff810a70a1
+  [ffff883db2ae1980] io_schedule at ffffffff815280a3
+  [ffff883db2ae19a0] __blockdev_direct_IO_newtrunc at ffffffff811c89cd
+  [ffff883db2ae19c8] zone_statistics at ffffffff811422b9
+  [ffff883db2ae1a48] xfs_get_blocks_direct at ffffffffa03a5110 [xfs]
+  [ffff883db2ae1b10] mempool_alloc_slab at ffffffff811220e5
+  [ffff883db2ae1b50] __blockdev_direct_IO at ffffffff811c9137
+  [ffff883db2ae1b60] xfs_get_blocks_direct at ffffffffa03a5110 [xfs]
+  [ffff883db2ae1b68] xfs_end_io_direct_write at ffffffffa03a4a90 [xfs]
+  [ffff883db2ae1bd0] xfs_vm_direct_IO at ffffffffa03a486c [xfs]
+  [ffff883db2ae1be0] xfs_get_blocks_direct at ffffffffa03a5110 [xfs]
+  [ffff883db2ae1be8] xfs_end_io_direct_write at ffffffffa03a4a90 [xfs]
+  [ffff883db2ae1c00] security_inode_need_killpriv at ffffffff81226366
+  [ffff883db2ae1c60] generic_file_direct_write at ffffffff81120552
+  [ffff883db2ae1cd0] xfs_file_dio_aio_write at ffffffffa03ab33a [xfs]
+  [ffff883db2ae1d60] xfs_file_aio_write at ffffffffa03ab7bf [xfs]
+  [ffff883db2ae1dc0] do_sync_write at ffffffff81188c7a
+  [ffff883db2ae1e30] autoremove_wake_function at ffffffff8109b2a0
+  [ffff883db2ae1eb0] security_file_permission at ffffffff812263c6
+  [ffff883db2ae1ef0] vfs_write at ffffffff81188f78
+  [ffff883db2ae1f30] sys_pwrite64 at ffffffff81189932
+  [ffff883db2ae1f80] system_call_fastpath at ffffffff8100b072
+~~~
+
+Turn on the stack depth checking functions to determine what is happening:
+
+# mount -t debugfs nodev /sys/kernel/debug
+# echo 1 > /proc/sys/kernel/stack_tracer_enabled
+
+and periodically grab the output of:
+
+# cat /sys/kernel/debug/tracing/stack_max_size
+# cat /sys/kernel/debug/tracing/stack_trace
+
+That will report the highest stack usage to date. For example, leave this command running:
+
+# while true ; do date ; cat /sys/kernel/debug/tracing/stack_max_size ; cat /sys/kernel/debug/tracing/stack_trace ; echo --- ; sleep 60 ; done | tee /var/log/stack_trace.log

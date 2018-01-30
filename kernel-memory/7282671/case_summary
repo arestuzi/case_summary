@@ -1,0 +1,89 @@
+Problem Statement
+why cache memory is eated after write a file to raw device?
+Description
+why cache memory is eated  after write a file to raw device?
+as all know, raw device is bypassed kernel page cache and buffer cache , but in fact it isn't.
+
+[root@rhel6 iso]# free -m
+             total       used       free     shared    buffers     cached
+Mem:          3832        169       3662          0         13         55
+-/+ buffers/cache:        101       3731
+Swap:         2015          0       2015
+[root@rhel6 iso]# dd if=rhel-atomic-installer-7.2-10.x86_64.iso of=/dev/raw/raw0  bs=1M  iflag=direct
+695+0 records in
+695+0 records out
+728760320 bytes (729 MB) copied, 1.81684 s, 401 MB/s
+[root@rhel6 iso]# free -m
+             total       used       free     shared    buffers     cached
+Mem:          3832        877       2955        695         13        758
+-/+ buffers/cache:        104       3728
+Swap:         2015          0       2015
+
+Solution
+奇怪, 现在又不能复现了, 应该是使用raw0的原因, raw0是控制设备,不能使用.
+[root@rhel6 data]# free -m
+             total       used       free     shared    buffers     cached
+Mem:          3832        176       3655          0         13         62
+-/+ buffers/cache:         99       3732
+Swap:         2015          0       2015
+[root@rhel6 data]# raw /dev/raw/raw0  /dev/sda
+Device '/dev/raw/raw0' is control raw dev (use raw<N> where <N> is greater than zero)
+
+[root@rhel6 data]# raw /dev/raw/raw1  /dev/sda
+/dev/raw/raw1:	bound to major 8, minor 0
+[root@rhel6 data]#
+[root@rhel6 data]# free -m
+             total       used       free     shared    buffers     cached
+Mem:          3832        176       3656          0         13         63
+-/+ buffers/cache:         99       3732
+Swap:         2015          0       2015
+[root@rhel6 data]# ls
+Fedora-Server-dvd-x86_64-24-1.2.iso  lost+found  nfs  ubuntu-16.04-server-amd64.iso
+[root@rhel6 data]# dd if=Fedora-Server-dvd-x86_64-24-1.2.iso  of=/dev/raw/raw1   iflag=direct
+3649536+0 records in
+3649536+0 records out
+1868562432 bytes (1.9 GB) copied, 904.154 s, 2.1 MB/s
+[root@rhel6 data]# free -m
+             total       used       free     shared    buffers     cached
+Mem:          3832        176       3655          0         13         63
+-/+ buffers/cache:         99       3732
+Swap:         2015          0       2015
+[root@rhel6 data]# ls
+Fedora-Server-dvd-x86_64-24-1.2.iso  lost+found  nfs  ubuntu-16.04-server-amd64.iso
+[root@rhel6 data]# dd if=ubuntu-16.04-server-amd64.iso  of=/dev/raw/raw1  iflag=direct bs=1M
+655+0 records in
+655+0 records out
+686817280 bytes (687 MB) copied, 1.3989 s, 491 MB/s
+[root@rhel6 data]# free -m
+             total       used       free     shared    buffers     cached
+Mem:          3832        176       3656          0         13         63
+-/+ buffers/cache:         99       3733
+Swap:         2015          0       2015
+[root@rhel6 data]#
+[root@rhel6 data]#
+[root@rhel6 data]#
+[root@rhel6 data]# free -m
+             total       used       free     shared    buffers     cached
+Mem:          3832        176       3655          0         13         63
+-/+ buffers/cache:         99       3732
+Swap:         2015          0       2015
+[root@rhel6 data]#
+
+重启之后,
+[root@rhel6 data]# free -m
+             total       used       free     shared    buffers     cached
+Mem:          3832        177       3654          0         13         62
+-/+ buffers/cache:        101       3730
+Swap:         2015          0       2015
+[root@rhel6 data]# dd if=Fedora-Server-dvd-x86_64-24-1.2.iso  ^C
+[root@rhel6 data]# raw /dev/raw/raw0  /dev/sda
+Device '/dev/raw/raw0' is control raw dev (use raw<N> where <N> is greater than zero)
+[root@rhel6 data]# dd if=Fedora-Server-dvd-x86_64-24-1.2.iso  of=/dev/raw/raw0 iflag=direct
+3649536+0 records in
+3649536+0 records out
+1868562432 bytes (1.9 GB) copied, 207.776 s, 9.0 MB/s
+[root@rhel6 data]# free -m
+             total       used       free     shared    buffers     cached
+Mem:          3832       1963       1868       1782         13       1844
+-/+ buffers/cache:        105       3727
+Swap:         2015          0       2015

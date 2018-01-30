@@ -100,3 +100,152 @@ Raw
     482
     483     else:
     484         swap = 4096
+
+All about "min_free_kbytes" parameter
+
+Issue
+    What is min_free_kbytes parameter?
+    How does min_free_kbytes parameter impacts a server memory utilization?
+    How does min_free_kbytes parameter and Swap space relate with each other with regards to memory pressure and memory reclamation?
+    How is default value of min_free_kbytes calculated ?
+
+min_free_kbytes decides the lowmem free minimum threshold value. It is the minimum amount of "free RAM" strictly reserved for kernel threads and objects.
+160 /*
+161  * Try to keep at least this much lowmem free.  Do not allow normal
+162  * allocations below this point, only high priority ones. Automatically
+163  * tuned according to the amount of memory in the system.
+164  */
+165 int min_free_kbytes = 1024;
+
+The another purpose of "min_free_kbytes" parameter is to decide the "water_marks" for all the memory zones.
+For eg :- "zone_normal" water_marks : min:7820KB low:9772KB high:11728KB - These values depend upon "min_free_kbytes" parameter.
+
+4968 /**
+4969  * setup_per_zone_wmarks - called when min_free_kbytes changes
+4970  * or when memory is hot-{added|removed}
+4971  *
+4972  * Ensures that the watermark[min,low,high] values for each zone are set
+4973  * correctly with respect to min_free_kbytes.
+4974  */
+
+Below code shows the formula used to set default value while system boots UP. It shows that only Physical RAM size is considered to calculate the "min_free_kbytes" default value. It also shows a table for default values.
+
+5079 /*
+ 5080  * Initialise min_free_kbytes.
+ 5081  *
+ 5082  * For small machines we want it small (128k min).  For large machines
+ 5083  * we want it large (64MB max).  But it is not linear, because network
+ 5084  * bandwidth does not increase linearly with machine size.  We use
+ 5085  *
+ 5086  *      min_free_kbytes = 4 * sqrt(lowmem_kbytes), for better accuracy:
+ 5087  *      min_free_kbytes = sqrt(lowmem_kbytes * 16)   <<<< This is the formula to be considered.
+ 5088  *
+ 5089  * which yields
+ 5090  *
+ 5091  * 16MB:        512k
+ 5092  * 32MB:        724k
+ 5093  * 64MB:        1024k
+ 5094  * 128MB:       1448k
+ 5095  * 256MB:       2048k
+ 5096  * 512MB:       2896k
+ 5097  * 1024MB:      4096k
+ 5098  * 2048MB:      5792k
+ 5099  * 4096MB:      8192k
+ 5100  * 8192MB:      11584k
+ 5101  * 16384MB:     16384k
+ 5102  */
+ 5103 static int __init init_per_zone_wmark_min(void)
+ 5104 {
+ 5105         unsigned long lowmem_kbytes;
+ 5106
+ 5107         lowmem_kbytes = nr_free_buffer_pages() * (PAGE_SIZE >> 10);
+ 5108
+ 5109         min_free_kbytes = int_sqrt(lowmem_kbytes * 16);
+ 5110         if (min_free_kbytes < 128)
+ 5111                 min_free_kbytes = 128;
+ 5112         if (min_free_kbytes > 65536)
+ 5113                 min_free_kbytes = 65536;
+ 5114         setup_per_zone_wmarks();
+ 5115         refresh_zone_stat_thresholds();
+ 5116         setup_per_zone_lowmem_reserve();
+ 5117         setup_per_zone_inactive_ratio();
+ 5118         return 0;
+ 5119 }
+
+ Moreover, the default value does not only depend on the above codes, it is also dependent on factors of how system uses the transparent hugepages. Below codes add some value for the default value of min_free_kbytes :
+
+ mm/huge_memory.c
+static int set_recommended_min_free_kbytes(void)
+{
+        struct zone *zone;
+        int nr_zones = 0;
+        unsigned long recommended_min;
+        extern int min_free_kbytes;
+
+        if (!test_bit(TRANSPARENT_HUGEPAGE_FLAG,
+                      &transparent_hugepage_flags) &&
+            !test_bit(TRANSPARENT_HUGEPAGE_REQ_MADV_FLAG,
+                      &transparent_hugepage_flags))
+                return 0;
+
+        for_each_populated_zone(zone)
+                nr_zones++;
+
+        /* Make sure at least 2 hugepages are free for MIGRATE_RESERVE */
+        recommended_min = pageblock_nr_pages * nr_zones * 2;
+
+        /*
+         * Make sure that on average at least two pageblocks are almost free
+         * of another type, one for a migratetype to fall back to and a
+         * second to avoid subsequent fallbacks of other types There are 3
+         * MIGRATE_TYPES we care about.
+         */
+        recommended_min += pageblock_nr_pages * nr_zones *
+                           MIGRATE_PCPTYPES * MIGRATE_PCPTYPES;
+
+        /* don't ever allow to reserve more than 5% of the lowmem */
+        recommended_min = min(recommended_min,
+                              (unsigned long) nr_free_buffer_pages() / 20);
+        recommended_min <<= (PAGE_SHIFT-10);
+
+        if (recommended_min > min_free_kbytes)
+                min_free_kbytes = recommended_min;
+        setup_per_zone_wmarks();
+        return 0;
+}
+late_initcall(set_recommended_min_free_kbytes);
+
+How do water_marks values impact system memory pressure/reclamation on system with Swap memory Available and on system without Swap memory ?
+
+    Scenario-1: System with Swap Memory
+        If free memory value drops below page_high watermark there will be no page reclamation done by kernel.
+        If free memory value drops below page_low watermark then kswapd will be triggered and it will start clearing as much as possible utilized cache & dirty pages and will try to free up memory.
+        But if kswapd is unable clear off enough cache pages and if free memory value goes below page_min watermark value, then system will not allow any new allocations for applications or user space threads. Only kernel threads & objects will be able to use the remaining free memory.
+
+    Scenario-2: System without Swap memory
+        Consider the water_marks remain unchanged.
+        When free memory drops below page_low watermark, kswapd will be initiated and it will start clearing off pages. But this time there is no swap space available to push dirty pages from cache -> swap.
+        Kswapd will push pages from RAM to swap only when it is marked as dirty.
+        A dirty page is nothing but a page which is cached by kernel on RAM.
+        But since there is no swap space, kswapd will simply flush back the page over disk.
+        So the only difference between a system with swap and a system without swap is that > The dirty pages will be flushed back over disk instead of moving them over swap space.
+        If there is no more page re-clamation possible obviously system is going to run out of memory and it will reach the page_min value at some stage.
+        The thing which will be impacted at this stage will be the application threads demanding more memory. Kernel threads will still have room to occupy the remaining free memory.
+        It is better to have kernel threads still running even if application is impacted.
+
+    Scenario-3: System without Swap but increased "min_free_kbytes"
+        Increasing the "min_free_kbytes" value will also increase the water_marks level.
+        This will make the kswapd daemon to initiate early as compared to above scenarios.
+        But increase in "min_free_kbytes" value is going to increase both the water_marks the "min" water_mark as well as the "low" water mark
+        Logically the memory window [min - to - low] for which the kswapd will be active will still remain somewhat same.
+        Even though kswapd initiates early it is going to work with same tendency as compared to previous scenario.
+        In addition to that, instead the free mem value will be reaching the page_min mark more early as compared to scenario-2, which is not good for any system.
+        The only thing which will benefit from this is are the kernel threads. Kernel objects and buffers will still have increased room to grow further. But applications may face frequent OOM conditions. ie Out of Memory.
+        But what if kernel threads do not require the remaining free memory . . ?? It will be waste of the available memory resource.
+
+    So following are few conclusions from above discuss scenario's :-
+        The "min_free_kbytes" value can be kept same for a system with SWAP Available and for a system with SWAP Unavailable.
+        Availability of SWAP does not decide the RAM utilization. It only impacts server performance.
+        The expected right value of "min_free_kbytes" will always depend upon the available RAM, load and actual memory demand on system.
+        It is necessary to understand how much memory resource is required by kernel threads and how much is required by user space. Depending upon that one can decide what should be the right threshold value for "min_free_kbytes" which is irrespective of availability of SWAP.
+        The only way would be to try experimenting different values.

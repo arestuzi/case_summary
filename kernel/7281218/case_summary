@@ -1,0 +1,87 @@
+Problem Statement
+如何正确统计用户打开的进程/线程数
+Description
+场景：在未启动postfix服务的情况下，用户的crontab任务的错误输出会写入/var/spool/postfix/maildrop文件夹中。但是我们遇到了人为删除/var/spool/postfix/maildrop目录的情况，导致错误输出的进程sendmail和postfix进程始终hang并大量的积压，最终导致了用户打开的进程/线程数超过软限制（通过/var/log/secure, /var/log/cron日志看出来），用户无法登录的情况。
+
+问题：
+1. 在上面的场景中，例如用户的软限制为1024，但是问题出现时，使用ps -eLf命令统计该用户打开的进程/线程数其实并不>=1024. 而是需要加上crond进程的子线程数才>=1024. 那引出了如何正确统计用户打开的进程/线程数。
+2. 上面的问题原因是删除/var/spool/postfix/maildrop导致进程hang，不知道这是不是postfix的bug，如果目录不存在，可以进程退出或者新建目录啊。
+Solution
+
+
+请使用命令 #ps -Lu username 来查看此用户开启多少线程
+nproc是通过user ID 来限制，此user ID下可以开启多少进程(线程）
+RLIMIT_NPROC
+              The  maximum  number  of processes (or, more precisely on Linux, threads) that can be created for the real user ID of the calling process.
+
+              nproc只对user id做限制，不应该把root下的进程统计进普通用户的进程。
+
+              造成此现象的原因，有可能是程序检测到系统无法再为其分配线程，抛出错误，程序退出。所以当看到系统中报出Resource temporarily unavailable时，程序已经退出了。
+
+              测试程序已经上传至附件，可以帮助您复现此现象。
+              for( i = 0; i < NR_THREADS; ++i){
+                       res = pthread_create(&threads[i], NULL, thread_function, (void*)i);
+                       sleep(2);
+                       if(res != 0) {
+                           perror("Thread creation failed");
+                           return 1;
+                       }
+                   }
+
+              程序发现无法创建线程时，抛出错误并退出。
+
+              请在测试环境中进行测试，测试方法：
+
+              1. 使用普通用户，把其soft nproc设置为10
+              2. 程序默认会创建20个线程。
+              3. 使用普通用户执行此线程。
+
+              现象：
+              1. 程序会在创建7个程序后显示Thread creation failed: Resource temporarily unavailable并退出。
+              2. 注释掉上述程序的return 1，则系统不会因为无法创建线程而退出。
+
+reply from cu:
+待会我测试一下。
+
+但是在我说的场景中，是已经将root的crontd线程算入普通用户的线程中。
+
+因为用户已经出现无法登录的情况。
+
+这样，在普通用户下新建crontab任务，例如：
+
+* * * * *  ls -l /tmp/file_not_exist.txt
+* * * * *  ls -l /tmp/file_not_exist.txt
+* * * * *  ls -l /tmp/file_not_exist.txt
+* * * * *  ls -l /tmp/file_not_exist.txt
+* * * * *  ls -l /tmp/file_not_exist.txt
+* * * * *  ls -l /tmp/file_not_exist.txt
+
+保存后，删除/var/spool/postfix/maildrop目录（前提postfix服务未启动）
+
+问题复现后，从vmcore中抓取sendmail和crond的uid来看，为普通用户uid，并非root id
+
+您的问题涉及到real uid 和effective uid
+
+ps -Lu uid查看的是effective uid
+-u userlist     Select by effective user ID (EUID) or name.
+ps -LU uid查看的是real uid
+-U userlist     select by real user ID (RUID) or name.
+
+nproc设置后，对real uid生效
+
+man getrlimit
+
+RLIMIT_NPROC
+The  maximum  number  of processes (or, more precisely on Linux, threads) that can be created for the <real user ID> of the calling process.  Upon encountering this limit, fork(2) fails with the error EAGAIN.
+
+所以，统计nproc，请尝试使用ps -LU uid来统计
+
+测试：
+[root@rhel67-test1 ~]# ps -Lu test1 | wc -l
+675
+[root@rhel67-test1 ~]# ps -LU test1 | wc -l
+1025
+
+real uid，effiective uid的区别是什么？
+
+用passwd命令做比方，当普通用户需要修改密码时，执行passwd命令，会临时获取root权限。这个临时获取root的权限就是effective uid，但是这个命令又是由普通用户执行的,普通用户的uid即为real uid

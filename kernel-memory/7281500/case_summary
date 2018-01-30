@@ -1,0 +1,26 @@
+Problem Statement
+内存和swap使用率 即将100%
+Description
+系统内存和swap即将耗尽，内存36G，swap 8G,应用只有weblogic，平时此应用也就是使用4G左右内存，请帮忙分析下内存耗尽不释放的原因
+Solution
+
+swap说明：
+1. 系统启动后，业务程序运行。当系统可用内存即将耗尽时，系统会通过回收算法，把应用程序一部分匿名页放入swap空间，以增大可用内存，给应用程序以及系统缓存使用。
+2. 只有重启系统或者swap off可以释放swap空间中的内容。
+
+建议：
+1. 请参考kbase： https://access.redhat.com/solutions/33375 中方法，使用脚本查看系统中swap使用率最高的前20个进程是哪些，并把ps_ax.output上传至问题单。 如果涉及到您的业务应用，建议联系应用研发部门，查看是否由于程序bug，申请了过多的匿名页，导致此现象的发生：
+ps ax | sed "s/^ *//" > /tmp/ps_ax.output
+let sumswapusage=0
+for x in $(grep Swap /proc/[1-9]*/smaps | grep -v '\W0 kB' | tr -s ' ' | cut -d' ' -f-2 | sort -t' ' -k2 -n | tr -d ' ' | tail -10); do
+    swapusage=$(echo $x | cut -d: -f3)
+    pid=$(echo $x | cut -d/ -f3)
+    procname=$(cat /tmp/ps_ax.output | grep ^$pid)
+    echo "============================"
+    echo "Process   : $procname"
+    echo "Memory Region Swap Usage: $swapusage kB"
+        let sumswapusage+=$swapusage; done
+echo "Sum of 10 Swap usage: $sumswapusage kB"
+
+2. RHEL6中358版本至504之间的版本，有swap增长过快的bug,如果可能建议升级内核版本至kernel-2.6.32-504.el6，并观察是否还有类似现象发生
+RHEL6 bug filed in RHBZ#949166(private) was resolved in kernel-2.6.32-504.el6

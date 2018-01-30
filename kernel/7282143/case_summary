@@ -1,0 +1,46 @@
+Problem Statement
+系统无故重启
+Description
+操作系统不知什么原因重启，希望查明系统重启的原因
+Solution
+
+建议：
+1. 帮您确认过ext4文件系统下文件夹索引最大值为64000，并且无法修改。禁用directory index，会很大程度上影响搜索性能。减少文件夹数量，跟应用确认下，是否是应用创建如此多的文件夹，是否需要这些文件夹。
+
+kernel: EXT4-fs warning (device dm-2): ext4_dx_add_entry: Directory index full!
+
+
+
+    The 'directory index full' error will be seen if there are lots of files/directories in the filesystem so that the tree reaches its indexing limits and cannot keep track further.
+
+    The directory index is an additional tree structure which helps directory lookups, improving performance for huge directories.
+
+    There is a limit in ext3 and ext4 of the directory structure.
+        A directory on ext3 can have at most 31998 sub directories, because an inode can have at most 32000 links. This is one cause of the warning.
+        A directory on ext4 can have at most 64000 sub directories.
+
+    The size of each section of a directory index is limited by the filesystem's block size. If very long filenames are used, fewer entries will fit in the block, leading to 'directory index full' errors earlier than they would occur with shorter filenames. This can become a bigger problem when the filesystem's block size is small (1024-byte or 2048-byte blocks), but will occur with 4096-byte blocks as well.
+
+
+2. 经查看系统重启是由uid为502的用户执行：
+相关audit日志：
+type=USER_CMD msg=audit(2016年09月14日 10:42:07.989:604553) : user pid=30320 uid=unknown(502) auid=unknown(502) ses=67658 msg='cwd=/app/hbhome cmd=su terminal=pts/17 res=success'
+----
+type=CRED_ACQ msg=audit(2016年09月14日 10:42:07.996:604559) : user pid=30325 uid=root auid=unknown(502) ses=67658 msg='op=PAM:setcred acct=root exe=/bin/su hostname=? addr=? terminal=pts/17 resccess'
+----
+type=USER_AUTH msg=audit(2016年09月14日 10:42:41.545:604560) : user pid=32148 uid=root auid=unknown(502) ses=12255 msg='op=PAM:authentication acct=hb_bill exe=/usr/sbin/vsftpd hostname=log-bd-tddr=10.128.91.27 terminal=ftp res=success'
+----
+type=USER_ACCT msg=audit(2016年09月14日 10:42:41.545:604561) : user pid=32148 uid=root auid=unknown(502) ses=12255 msg='op=PAM:accounting acct=hb_bill exe=/usr/sbin/vsftpd hostname=log-bd-t1 ad10.128.91.27 terminal=ftp res=success'
+----
+type=CRED_ACQ msg=audit(2016年09月14日 10:42:41.545:604562) : user pid=32148 uid=root auid=unknown(502) ses=12255 msg='op=PAM:setcred acct=hb_bill exe=/usr/sbin/vsftpd hostname=log-bd-t1 addr=128.91.27 terminal=ftp res=success'
+----
+type=SYSTEM_RUNLEVEL msg=audit(2016年09月14日 10:42:56.788:604563) : user pid=390 uid=root auid=unknown(502) ses=67658 msg='old-level=3 new-level=6 exe=/sbin/shutdown hostname=? addr=? terminal=pts/17 res=success'
+----
+type=SYSTEM_SHUTDOWN msg=audit(2016年09月14日 10:42:56.789:604564) : user pid=390 uid=root auid=unknown(502) ses=67658 msg='init exe=/sbin/shutdown hostname=? addr=? terminal=pts/17 res=success'
+----
+
+可以看出，最开始uid为502的用户su到root用户，然后执行了shutdown命令. auid为audit uid，
+
+建议：
+1. 如果非管理员登录，需要修改root密码
+2. 减少用户502的sudo 权限

@@ -1,0 +1,215 @@
+Problem Statement
+系统发生“kernel: INFO: task jbd2/sdj-8:2876 blocked for more than 120 seconds”，影响应用使用
+Description
+系统发生“kernel: INFO: task jbd2/sdj-8:2876 blocked for more than 120 seconds”，影响应用使用，希望查到问题原因并解决
+Solution
+
+From the vmcore, it shows that the system was crashed as there was a 'D' state process with longer than 120 seconds.
+
+----------------------------------------------------------------------------------
+        CPUS: 32
+        DATE: Wed Dec 14 21:05:51 2016
+      UPTIME: 6 days, 13:10:00
+LOAD AVERAGE: 39.47, 17.55, 10.90
+       TASKS: 1704
+    NODENAME: w5bigdata099
+     RELEASE: 2.6.32-431.el6.x86_64
+     VERSION: #1 SMP Sun Nov 10 22:19:54 EST 2013
+     MACHINE: x86_64  (2599 Mhz)
+      MEMORY: 159.9 GB
+       PANIC: "Kernel panic - not syncing: hung_task: blocked tasks"
+         PID: 338
+     COMMAND: "khungtaskd"
+        TASK: ffff88145c6c3500  [THREAD_INFO: ffff88145c6c4000]
+         CPU: 25
+       STATE: TASK_RUNNING (PANIC)
+----------------------------------------------------------------------------------
+
+Checking 'D' state process shows 48 'D' (UN) state processes and the longest one was in there for 2 minutes 18 seconds.
+
+----------------------------------------------------------------------------------
+crash> ps -m | grep UN | wc -l
+48
+crash> ps -m | grep UN | tail
+[0 00:00:59.355] [UN]  PID: 13055  TASK: ffff880127bb0ae0  CPU: 22  COMMAND: "ps"
+[0 00:01:03.340] [UN]  PID: 12983  TASK: ffff88101d86aae0  CPU: 22  COMMAND: "ps"
+[0 00:01:29.028] [UN]  PID: 12065  TASK: ffff88139603d500  CPU: 20  COMMAND: "ps"
+[0 00:01:46.744] [UN]  PID: 10108  TASK: ffff882852d4f500  CPU: 21  COMMAND: "java"
+[0 00:01:55.890] [UN]  PID: 3935   TASK: ffff88145c800aa0  CPU: 7   COMMAND: "python2.6"
+[0 00:01:59.680] [UN]  PID: 11227  TASK: ffff880a1aec9540  CPU: 20  COMMAND: "ps"
+[0 00:02:08.944] [UN]  PID: 10978  TASK: ffff88048ba28080  CPU: 20  COMMAND: "ps"
+[0 00:02:14.393] [UN]  PID: 10383  TASK: ffff881457d0c080  CPU: 27  COMMAND: "java"
+[0 00:02:15.394] [UN]  PID: 10329  TASK: ffff8801ad4d9540  CPU: 26  COMMAND: "java"
+[0 00:02:18.841] [UN]  PID: 10094  TASK: ffff8814c7972aa0  CPU: 25  COMMAND: "java"
+----------------------------------------------------------------------------------
+
+This process was trying to get the rw_semaphore in write mode.
+
+----------------------------------------------------------------------------------
+crash> bt
+PID: 10094  TASK: ffff8814c7972aa0  CPU: 25  COMMAND: "java"
+ #0 [ffff88256da15d58] schedule at ffffffff815278c2
+ #1 [ffff88256da15e20] rwsem_down_failed_common at ffffffff81529f85
+ #2 [ffff88256da15e80] rwsem_down_write_failed at ffffffff8152a0e3
+ #3 [ffff88256da15ec0] call_rwsem_down_write_failed at ffffffff8128e883
+ #4 [ffff88256da15f20] sys_mprotect at ffffffff81152386
+ #5 [ffff88256da15f80] system_call_fastpath at ffffffff8100b072
+    RIP: 0000003d3cae55a7  RSP: 00007f8e8618f238  RFLAGS: 00010246
+    RAX: 000000000000000a  RBX: ffffffff8100b072  RCX: 0000000000000000
+    RDX: 0000000000000001  RSI: 0000000000001000  RDI: 00007f8eac83c000
+    RBP: 00007f8e8618fa90   R8: 00007f8eac5ead80   R9: 0000000000000001
+    R10: 0000000000000000  R11: 0000000000000206  R12: 00007f8eac5ea5e8
+    R13: 00007f8ea409b000  R14: 00007f8eac5e13b0  R15: 0000000000001000
+    ORIG_RAX: 000000000000000a  CS: 0033  SS: 002b
+
+284   down_write(&current->mm->mmap_sem);  <---
+
+
+crash> task_struct.mm ffff8814c7972aa0
+  mm = 0xffff88285be95a40
+
+crash> mm_struct.mmap_sem 0xffff88285be95a40 -ox
+struct mm_struct {
+  [ffff88285be95aa8] struct rw_semaphore mmap_sem;
+}
+----------------------------------------------------------------------------------
+
+This semaphore was taken in read mode in process 10070.
+
+----------------------------------------------------------------------------------
+crash> bt 10070
+PID: 10070  TASK: ffff8814b8940040  CPU: 12  COMMAND: "java"
+ #0 [ffff8814c6887e90] crash_nmi_callback at ffffffff8102fee6
+ #1 [ffff8814c6887ea0] notifier_call_chain at ffffffff8152d515
+ #2 [ffff8814c6887ee0] atomic_notifier_call_chain at ffffffff8152d57a
+ #3 [ffff8814c6887ef0] notify_die at ffffffff810a154e
+ #4 [ffff8814c6887f20] do_nmi at ffffffff8152b1db
+ #5 [ffff8814c6887f50] nmi at ffffffff8152aaa0
+    [exception RIP: _spin_lock_irq+40]
+    RIP: ffffffff8152a238  RSP: ffff8814c7d25678  RFLAGS: 00000093
+    RAX: 00000000000086c2  RBX: ffff881480010dc0  RCX: 0000000000000006
+    RDX: 00000000000086c0  RSI: 000000000000000e  RDI: ffff881480019200
+    RBP: ffff8814c7d25678   R8: 2dc0000000000000   R9: 6e00000000000000
+    R10: ffffea0075b685c0  R11: 0000000000000006  R12: ffffea005e209c80
+    R13: 0000000000000000  R14: ffff8814c68931c0  R15: 00c0000000020028
+    ORIG_RAX: ffffffffffffffff  CS: 0010  SS: 0018
+--- <NMI exception stack> ---
+ #6 [ffff8814c7d25678] _spin_lock_irq at ffffffff8152a238
+ #7 [ffff8814c7d25680] ____pagevec_lru_deactivate at ffffffff81136cc8
+ #8 [ffff8814c7d25710] deactivate_page at ffffffff81137068
+ #9 [ffff8814c7d25720] invalidate_mapping_pages at ffffffff81137595
+#10 [ffff8814c7d25810] shrink_icache_memory at ffffffff811a602b
+#11 [ffff8814c7d25870] shrink_slab at ffffffff81138ada
+#12 [ffff8814c7d258d0] zone_reclaim at ffffffff8113b6de
+#13 [ffff8814c7d259f0] get_page_from_freelist at ffffffff8112d83c
+#14 [ffff8814c7d25b20] __alloc_pages_nodemask at ffffffff8112f3a3
+#15 [ffff8814c7d25c60] alloc_pages_vma at ffffffff81167b9a
+#16 [ffff8814c7d25cb0] handle_pte_fault at ffffffff8114ac9d
+#17 [ffff8814c7d25d90] handle_mm_fault at ffffffff8114b28a
+#18 [ffff8814c7d25e00] __do_page_fault at ffffffff8104a8d8
+#19 [ffff8814c7d25f20] do_page_fault at ffffffff8152d45e
+#20 [ffff8814c7d25f50] page_fault at ffffffff8152a815
+    RIP: 00007f8ea101e790  RSP: 00007f8eab7a3118  RFLAGS: 00010202
+    RAX: 00000007db2f2fd8  RBX: 00000007db2f3008  RCX: 0000000000000000
+    RDX: 0000000000000004  RSI: 000000066150d0f0  RDI: 00000000ffffed50
+    RBP: 00007f8eab7a3160   R8: 0000000040000000   R9: 00000007da87a878
+    R10: 00007f8eac5f4880  R11: 00007f8ea1065360  R12: 0000000000000000
+    R13: 000000066242993d  R14: 00007f8eab7a3170  R15: 00007f8ea4012000
+    ORIG_RAX: ffffffffffffffff  CS: 0033  SS: 002b
+
+
+It had read lock already.
+
+1104 retry:
+1105     down_read(&mm->mmap_sem);  <------
+----------------------------------------------------------------------------------
+
+Once it took the above semaphore, it also was doing another activity which requires spinlock. As this spinlock was already taken by another process, it was in the loop.
+
+
+----------------------------------------------------------------------------------
+/usr/src/debug/kernel-2.6.32-431.el6/linux-2.6.32-431.el6.x86_64/arch/x86/include/asm/paravirt.h: 885
+0xffffffff81136cb5 <____pagevec_lru_deactivate+149>:    sti
+0xffffffff81136cb6 <____pagevec_lru_deactivate+150>:    nopw   0x0(%rax,%rax,1)
+/usr/src/debug/kernel-2.6.32-431.el6/linux-2.6.32-431.el6.x86_64/mm/swap.c: 498
+0xffffffff81136cbc <____pagevec_lru_deactivate+156>:    lea    0x8440(%rbx),%rdi
+0xffffffff81136cc3 <____pagevec_lru_deactivate+163>:    callq  0xffffffff8152a210 <_spin_lock_irq>
+
+490   for (i = 0; i < pagevec_count(pvec); i++) {
+491     struct page *page = pvec->pages[i];
+492     struct zone *pagezone = page_zone(page);
+493
+494     if (pagezone != zone) {
+495       if (zone)
+496         spin_unlock_irq(&zone->lru_lock);
+497       zone = pagezone;
+498       spin_lock_irq(&zone->lru_lock);  <--- waiting here.
+----------------------------------------------------------------------------------
+
+This spinlock was taken by process 32015 and it was doing page reclaiming operations.
+
+----------------------------------------------------------------------------------
+crash> bt
+PID: 32015  TASK: ffff88180b50b540  CPU: 4   COMMAND: "java"
+ #0 [ffff880028287e90] crash_nmi_callback at ffffffff8102fee6
+ #1 [ffff880028287ea0] notifier_call_chain at ffffffff8152d515
+ #2 [ffff880028287ee0] atomic_notifier_call_chain at ffffffff8152d57a
+ #3 [ffff880028287ef0] notify_die at ffffffff810a154e
+ #4 [ffff880028287f20] do_nmi at ffffffff8152b1db
+ #5 [ffff880028287f50] nmi at ffffffff8152aaa0
+    [exception RIP: mem_cgroup_lru_del_list+61]
+    RIP: ffffffff8117833d  RSP: ffff882783335618  RFLAGS: 00000047
+    RAX: ffff88287819bb50  RBX: ffffea00631e0f98  RCX: 000000000000038a
+    RDX: 0000000000000001  RSI: 0000000000000000  RDI: 000000001c51bb50
+    RBP: ffff882783335628   R8: 0000000000000002   R9: 0000000000000002
+    R10: 0000000000000000  R11: 0000000000000006  R12: 0000000000000002
+    R13: 0000000000000003  R14: ffff8800282931c0  R15: 0000000000000000
+    ORIG_RAX: ffffffffffffffff  CS: 0010  SS: 0018
+--- <NMI exception stack> ---
+ #6 [ffff882783335618] mem_cgroup_lru_del_list at ffffffff8117833d
+ #7 [ffff882783335630] ____pagevec_lru_deactivate at ffffffff81136d44
+ #8 [ffff8827833356c0] deactivate_page at ffffffff81137068
+ #9 [ffff8827833356d0] invalidate_mapping_pages at ffffffff81137595
+#10 [ffff8827833357c0] shrink_icache_memory at ffffffff811a602b
+#11 [ffff882783335820] shrink_slab at ffffffff81138ada
+#12 [ffff882783335880] zone_reclaim at ffffffff8113b6de
+#13 [ffff8827833359a0] get_page_from_freelist at ffffffff8112d83c
+#14 [ffff882783335ad0] __alloc_pages_nodemask at ffffffff8112f3a3
+#15 [ffff882783335c10] alloc_pages_current at ffffffff81167a9a
+#16 [ffff882783335c40] tcp_sendmsg at ffffffff814a2297
+#17 [ffff882783335cf0] sock_aio_write at ffffffff8144a1db
+#18 [ffff882783335dc0] do_sync_write at ffffffff81188c7a
+#19 [ffff882783335ef0] vfs_write at ffffffff81189044
+#20 [ffff882783335f30] sys_write at ffffffff81189871
+#21 [ffff882783335f80] system_call_fastpath at ffffffff8100b072
+    RIP: 0000003d3ce0e6fd  RSP: 00007f8532ccbf10  RFLAGS: 00000287
+    RAX: 0000000000000001  RBX: ffffffff8100b072  RCX: 000000000000000f
+    RDX: 0000000000000033  RSI: 00007f85652458c0  RDI: 000000000000022e
+    RBP: 00007f8532ccc2b0   R8: 0000000000000033   R9: 0000000755f016b0
+    R10: 0000000000129170  R11: 0000000000000293  R12: 0000000000000033
+    R13: 00007f85652439e8  R14: 00007f85652458c0  R15: 00007f85652439e8
+    ORIG_RAX: 0000000000000001  CS: 0033  SS: 002b
+----------------------------------------------------------------------------------
+
+The memory it was reclaiming was from the pages that had file mapped. Checking which filesystem the page was mapped shows '/dev/sdj' in the below.
+
+----------------------------------------------------------------------------------
+/usr/src/debug/kernel-2.6.32-431.el6/linux-2.6.32-431.el6.x86_64/mm/truncate.c: 328
+0xffffffff81137430 <invalidate_mapping_pages>:  push   %rbp
+0xffffffff81137431 <invalidate_mapping_pages+1>:        mov    %rsp,%rbp
+0xffffffff81137434 <invalidate_mapping_pages+4>:        push   %r15
+0xffffffff81137436 <invalidate_mapping_pages+6>:        push   %r14
+0xffffffff81137438 <invalidate_mapping_pages+8>:        push   %r13
+0xffffffff8113743a <invalidate_mapping_pages+10>:       push   %r12  <-- inode
+
+
+crash> inode.i_op,i_sb ffff8813682db8b0
+  i_op = 0xffffffffa00c84e0 <ext4_file_inode_operations>
+  i_sb = 0xffff882858acc400
+
+crash> mount 0xffff882858acc400
+    VFSMOUNT         SUPERBLK     TYPE   DEVNAME   DIRNAME
+ffff88285b069ac0 ffff882858acc400 ext4   /dev/sdj  /chunk9
+----------------------------------------------------------------------------------
+
+As the above process was not blocked, it'll finish the job soon, but depends on how fast the flushing the data back to the filesystems. It's not recommended to enable 'kernel.hung_task_panic' in production system as it's easily reach 120 seconds of delay when there's high IO load. Please consider to disable it or increase the timeout from 120 to something much reasonable. Thanks.
