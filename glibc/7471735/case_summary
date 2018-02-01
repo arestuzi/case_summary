@@ -1,0 +1,27 @@
+Problem Statement
+*** missing separator.  Stop.
+Description
+*** missing separator.  Stop.
+Solution
+
+"makefile has a very stupid relation with tabs , all actions of every rule are identified by tabs ...... and No 4 spaces dont make a tab , only a tab makes a tab"
+
+correct:
+$ cat -e -t -v Makefile
+reciprocal: main.o reciprocal.o$
+^I^Ig++ $(CFLAGS) -o reciprocal main.o reciprocal.o$
+$
+main.o: main.c reciprocal.hpp$
+^I^Igcc $(CFLAGS) -c main.c$
+$
+reciprocal.o: reciprocal.cpp reciprocal.hpp$
+^I^Ig++ $(CFLAGS) -c reciprocal.cpp$
+$
+clean:$
+^I^Irm -f *.o reciprocal$
+
+wrong:
+$ cat -e -t -v Makefile
+reciprocal: main.o reciprocal.o$
+    g++ $(CFLAGS) -o reciprocal main.o reciprocal.o$
+$
